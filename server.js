@@ -12,6 +12,9 @@ app.use(morgan("dev"));
 app.use(express.json({ type: ["application/json"] }));
 app.use(cors({ origin: true }));
 
+app.get("/api/health", (req, res) => {
+  res.status(200).json({ ok: true, ts: Date.now() });
+});
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } }); // 40MB
 
 const {
