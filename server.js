@@ -13,8 +13,11 @@ app.use(morgan("dev"));
 app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), (req, res) => {
   try {
     const body = req.body.toString("utf8");
-    console.log("ORDER WEBHOOK RECEIVED:");
-    console.log(body);
+    const order = JSON.parse(body);
+
+    console.log("ORDER WEBHOOK RECEIVED");
+    const lineItems = order.line_items || [];
+    console.log("LINE ITEMS:", lineItems);
 
     res.status(200).send("OK");
   } catch (err) {
@@ -22,6 +25,7 @@ app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), (
     res.status(500).send("Webhook error");
   }
 });
+
 app.use(express.json({ type: ["application/json"] }));
 app.use(cors({ origin: true }));
 
