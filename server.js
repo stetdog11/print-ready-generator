@@ -17,7 +17,12 @@ app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), (
 
     console.log("ORDER WEBHOOK RECEIVED");
     const lineItems = order.line_items || [];
-    console.log("LINE ITEMS:", lineItems);
+
+for (const item of lineItems) {
+  console.log("ITEM TITLE:", item.title);
+  console.log("QUANTITY:", item.quantity);
+  console.log("PROPERTIES:", item.properties);
+}
 
     res.status(200).send("OK");
   } catch (err) {
