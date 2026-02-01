@@ -9,12 +9,26 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 const app = express();
 app.use(morgan("dev"));
+
+app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), (req, res) => {
+  try {
+    const body = req.body.toString("utf8");
+    console.log("ORDER WEBHOOK RECEIVED:");
+    console.log(body);
+
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(500).send("Webhook error");
+  }
+});
 app.use(express.json({ type: ["application/json"] }));
 app.use(cors({ origin: true }));
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ ok: true, ts: Date.now() });
 });
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } }); // 40MB
 
 const {
