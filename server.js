@@ -425,4 +425,8 @@ app.get("/admin/uploads/:uploadId", basicAuth, (req, res) => {
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
-app.listen(Number(PORT), () => console.log(`Server running on :${PORT}`));
+const LISTEN_PORT = Number(process.env.PORT || 8080);
+app.listen(LISTEN_PORT, "0.0.0.0", () => {
+  console.log(`Server running on :${LISTEN_PORT}`);
+});
+
