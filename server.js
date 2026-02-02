@@ -127,6 +127,40 @@ const rowBuf = await sharp({
   .toBuffer();
 
 console.log("Row buffer size (bytes):", rowBuf.length);
+// STEP C.6 — Stack rows to full fabric height
+const yards = parseInt(props.qty || "1", 10);
+const fabricHeightIn = yards * 36;
+const fabricHeightPx = Math.round(fabricHeightIn * dpi);
+
+console.log("Fabric height (px):", fabricHeightPx);
+
+// how many rows needed
+const rowsDown = Math.ceil(fabricHeightPx / tileHpx);
+console.log("Rows down:", rowsDown);
+
+// build vertical composites
+const rowComposites = [];
+for (let y = 0; y < rowsDown; y++) {
+  rowComposites.push({
+    input: rowBuf,
+    left: 0,
+    top: y * tileHpx
+  });
+}
+
+const fabricBuf = await sharp({
+  create: {
+    width: fabricWidthPx,
+    height: fabricHeightPx,
+    channels: 4,
+    background: { r: 255, g: 255, b: 255, alpha: 0 }
+  }
+})
+  .composite(rowComposites)
+  .png()
+  .toBuffer();
+
+console.log("Final fabric buffer size (bytes):", fabricBuf.length);
 
   // Step C (TIFF generator) will go here next
 }
