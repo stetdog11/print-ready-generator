@@ -103,6 +103,8 @@ const tileBuf = await sharp(imgBuf)
   .toBuffer();
 
 console.log("Tile buffer size (bytes):", tileBuf.length);
+ 
+
 // STEP C.5 — Repeat tile across fabric width (one row)
 const maxWidthIn = parseFloat(props.max_width_in);
 const fabricWidthPx = Math.round(maxWidthIn * dpi);
@@ -150,11 +152,14 @@ const tiffBuf = await sharp(tileBuf)
   .toBuffer();
 
 console.log("TIFF buffer size (bytes):", tiffBuf.length);
+// Upload TIFF tile to R2
+const lineId = item.id || item.variant_id || "line";
+const tiffKey = s3KeyForOutput(orderId, lineId, "tile");
+const tiffUrl = await putPublicObject(tiffKey, "image/tiff", tiffBuf);
 
-return res.status(200).send("OK (TIFF tile generated)");
+console.log("TIFF uploaded:", tiffUrl);
 
-return res.status(200).send("OK (preview row built)");
-
+continue; // stop here for now; avoid huge fabric build until tile upload is confirmed
 
 // build composite operations
 const composites = [];
