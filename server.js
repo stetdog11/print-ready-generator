@@ -72,6 +72,13 @@ if (!imgRes.ok) {
 const imgBuf = Buffer.from(await imgRes.arrayBuffer());
 
 console.log("Downloaded image size (bytes):", imgBuf.length);
+// STEP C.3 — Read image metadata (sanity check)
+const meta = await sharp(imgBuf, { failOn: "none" }).metadata();
+console.log("Image metadata:", {
+  format: meta.format,
+  width: meta.width,
+  height: meta.height
+});
 
   // Step C (TIFF generator) will go here next
 }
