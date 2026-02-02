@@ -79,6 +79,21 @@ console.log("Image metadata:", {
   width: meta.width,
   height: meta.height
 });
+// STEP C.4 — Build the scaled tile at 300 DPI
+const tileWIn = parseFloat(props.tile_w);
+const tileHIn = parseFloat(props.tile_h);
+const dpi = parseInt(props.dpi || "300", 10);
+
+const tileWpx = Math.round(tileWIn * dpi);
+const tileHpx = Math.round(tileHIn * dpi);
+
+console.log("Tile target (px):", tileWpx, tileHpx);
+
+const tileBuf = await sharp(imgBuf)
+  .resize(tileWpx, tileHpx, { fit: "cover" })
+  .toBuffer();
+
+console.log("Tile buffer size (bytes):", tileBuf.length);
 
   // Step C (TIFF generator) will go here next
 }
