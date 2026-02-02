@@ -94,6 +94,39 @@ const tileBuf = await sharp(imgBuf)
   .toBuffer();
 
 console.log("Tile buffer size (bytes):", tileBuf.length);
+// STEP C.5 — Repeat tile across fabric width (one row)
+const maxWidthIn = parseFloat(props.max_width_in);
+const fabricWidthPx = Math.round(maxWidthIn * dpi);
+
+console.log("Fabric width (px):", fabricWidthPx);
+
+// how many tiles fit across
+const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
+console.log("Tiles across:", tilesAcross);
+
+// build composite operations
+const composites = [];
+for (let x = 0; x < tilesAcross; x++) {
+  composites.push({
+    input: tileBuf,
+    left: x * tileWpx,
+    top: 0
+  });
+}
+
+const rowBuf = await sharp({
+  create: {
+    width: fabricWidthPx,
+    height: tileHpx,
+    channels: 4,
+    background: { r: 255, g: 255, b: 255, alpha: 0 }
+  }
+})
+  .composite(composites)
+  .png()
+  .toBuffer();
+
+console.log("Row buffer size (bytes):", rowBuf.length);
 
   // Step C (TIFF generator) will go here next
 }
