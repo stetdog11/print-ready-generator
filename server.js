@@ -103,6 +103,9 @@ console.log("Fabric width (px):", fabricWidthPx);
 // how many tiles fit across
 const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
 console.log("Tiles across:", tilesAcross);
+  
+console.log("Stopping before full fabric render (avoiding OOM on Render free tier).");
+return res.status(200).send("OK (stopped before full render)");
 
 // build composite operations
 const composites = [];
