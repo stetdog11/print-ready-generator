@@ -249,7 +249,7 @@ app.get("/api/health", (req, res) => {
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } }); // 40MB
 
 const {
-  PORT = "8080",
+  PORT,
   SHOPIFY_WEBHOOK_SECRET,
 
   S3_REGION,
