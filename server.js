@@ -10,7 +10,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 const app = express();
 app.use(morgan("dev"));
 
-app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), (req, res) => {
+app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), async (req, res) => {
   try {
     const body = req.body.toString("utf8");
     const order = JSON.parse(body);
