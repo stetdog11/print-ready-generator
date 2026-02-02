@@ -104,8 +104,35 @@ console.log("Fabric width (px):", fabricWidthPx);
 const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
 console.log("Tiles across:", tilesAcross);
   
-console.log("Stopping before full fabric render (avoiding OOM on Render free tier).");
-return res.status(200).send("OK (stopped before full render)");
+// STEP C.6 — Build a small "row preview" (safe)
+const previewTilesAcross = Math.min(tilesAcross, 8); // cap to avoid OOM
+const previewWidthPx = previewTilesAcross * tileWpx;
+
+console.log("Preview tiles across:", previewTilesAcross);
+console.log("Preview width (px):", previewWidthPx);
+
+const previewRowBuf = await sharp({
+  create: {
+    width: previewWidthPx,
+    height: tileHpx,
+    channels: 4,
+    background: { r: 255, g: 255, b: 255, alpha: 1 }
+  }
+})
+  .composite(
+    Array.from({ length: previewTilesAcross }).map((_, i) => ({
+      input: tileBuf,
+      left: i * tileWpx,
+      top: 0
+    }))
+  )
+  .png()
+  .toBuffer();
+
+console.log("Preview row buffer size (bytes):", previewRowBuf.length);
+
+return res.status(200).send("OK (preview row built)");
+
 
 // build composite operations
 const composites = [];
