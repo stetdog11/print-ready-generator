@@ -252,12 +252,6 @@ const {
   ADMIN_PASS
 } = process.env;
 
-const s3 = new S3Client({
-  region: S3_REGION || "auto",
-  endpoint: S3_ENDPOINT,
-  credentials: { accessKeyId: S3_ACCESS_KEY_ID || "", secretAccessKey: S3_SECRET_ACCESS_KEY || "" }
-});
-
 const jobs = new Map(); // upload_id -> { upload_url, created_at, outputs: {tile, full_width, order_id, line_id} }
 
 function basicAuth(req, res, next) {
