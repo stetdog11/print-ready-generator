@@ -14,6 +14,17 @@ app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), (
   try {
     const body = req.body.toString("utf8");
     const order = JSON.parse(body);
+// Prevent double-processing if multiple webhooks hit for the same order
+const orderId = order.id;
+
+global.__processedOrders = global.__processedOrders || new Set();
+
+if (global.__processedOrders.has(orderId)) {
+  console.log("Already processed order, skipping:", orderId);
+  return res.status(200).send("ok");
+}
+
+global.__processedOrders.add(orderId);
 
     console.log("ORDER WEBHOOK RECEIVED");
     const lineItems = order.line_items || [];
