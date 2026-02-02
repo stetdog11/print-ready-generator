@@ -18,11 +18,40 @@ app.post("/api/shopify/order-paid", express.raw({ type: "application/json" }), (
     console.log("ORDER WEBHOOK RECEIVED");
     const lineItems = order.line_items || [];
 
-for (const item of lineItems) {
-  console.log("ITEM TITLE:", item.title);
-  console.log("QUANTITY:", item.quantity);
-  console.log("PROPERTIES:", item.properties);
+// STEP B: Only process real printed-fabric items
+
+function propsArrayToObject(properties) {
+  const obj = {};
+  for (const p of properties || []) {
+    if (!p) continue;
+    const name = p.name ?? p.key;
+    const value = p.value;
+    if (name != null) obj[String(name)] = value;
+  }
+  return obj;
 }
+
+const printableItems = lineItems
+  .map((item) => ({ item, props: propsArrayToObject(item.properties) }))
+  .filter(({ props }) => props.upload_url || props.upload_id);
+
+console.log(`Line items: ${lineItems.length} | Printable items: ${printableItems.length}`);
+
+for (const { item, props } of printableItems) {
+  console.log("PROCESSING PRINT ITEM:", item.title);
+  console.log({
+    upload_url: props.upload_url,
+    dpi: props.dpi,
+    tile_w: props.tile_w,
+    tile_h: props.tile_h,
+    rotate: props.rotate,
+    max_width_in: props.max_width_in,
+    qty: props.qty,
+  });
+
+  // Step C (TIFF generator) will go here next
+}
+
 
     res.status(200).send("OK");
   } catch (err) {
