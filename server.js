@@ -147,7 +147,6 @@ const previewRowBuf = await sharp({
 console.log("Preview row buffer size (bytes):", previewRowBuf.length);
 // STEP C.7 — Export print-ready TIFF (tile only)
 // how many tiles fit across full fabric width
-const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
 
 // build row (full-width strip)
 const composites = [];
