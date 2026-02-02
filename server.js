@@ -59,6 +59,19 @@ for (const { item, props } of printableItems) {
     max_width_in: props.max_width_in,
     qty: props.qty,
   });
+// STEP C.2 — Download the uploaded image and log its size
+const uploadUrl = props.upload_url;
+
+console.log("Downloading image:", uploadUrl);
+
+const imgRes = await fetch(uploadUrl);
+if (!imgRes.ok) {
+  throw new Error(`Image download failed: ${imgRes.status} ${imgRes.statusText}`);
+}
+
+const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+
+console.log("Downloaded image size (bytes):", imgBuf.length);
 
   // Step C (TIFF generator) will go here next
 }
