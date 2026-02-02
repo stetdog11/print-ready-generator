@@ -130,6 +130,19 @@ const previewRowBuf = await sharp({
   .toBuffer();
 
 console.log("Preview row buffer size (bytes):", previewRowBuf.length);
+// STEP C.7 — Export print-ready TIFF (tile only)
+const tiffBuf = await sharp(tileBuf)
+  .tiff({
+    compression: "lzw",
+    xres: dpi,
+    yres: dpi,
+    resolutionUnit: "inch"
+  })
+  .toBuffer();
+
+console.log("TIFF buffer size (bytes):", tiffBuf.length);
+
+return res.status(200).send("OK (TIFF tile generated)");
 
 return res.status(200).send("OK (preview row built)");
 
