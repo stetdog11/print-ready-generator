@@ -98,9 +98,13 @@ const tileHpx = Math.round(tileHIn * dpi);
 
 console.log("Tile target (px):", tileWpx, tileHpx);
 
+const rotateDeg = Number(props.rotate || 0) || 0;
+
 const tileBuf = await sharp(imgBuf)
   .resize(tileWpx, tileHpx, { fit: "cover" })
+  .rotate(rotateDeg)
   .toBuffer();
+
 
 console.log("Tile buffer size (bytes):", tileBuf.length);
  
@@ -142,14 +146,19 @@ const previewRowBuf = await sharp({
 
 console.log("Preview row buffer size (bytes):", previewRowBuf.length);
 // STEP C.7 — Export print-ready TIFF (tile only)
+// Sharp expects pixels-per-mm for xres/yres.
+// Convert DPI (pixels/inch) -> pixels/mm
+const pxPerMm = dpi / 25.4;
+
 const tiffBuf = await sharp(tileBuf)
   .tiff({
     compression: "lzw",
-    xres: dpi,
-    yres: dpi,
+    xres: pxPerMm,
+    yres: pxPerMm,
     resolutionUnit: "inch"
   })
   .toBuffer();
+
 
 console.log("TIFF buffer size (bytes):", tiffBuf.length);
 // Upload TIFF tile to R2
