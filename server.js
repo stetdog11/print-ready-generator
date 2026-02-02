@@ -146,29 +146,56 @@ const previewRowBuf = await sharp({
 
 console.log("Preview row buffer size (bytes):", previewRowBuf.length);
 // STEP C.7 — Export print-ready TIFF (tile only)
-// Sharp expects pixels-per-mm for xres/yres.
-// Convert DPI (pixels/inch) -> pixels/mm
+// how many tiles fit across full fabric width
+const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
+
+// build row (full-width strip)
+const composites = [];
+for (let x = 0; x < tilesAcross; x++) {
+  composites.push({
+    input: tileBuf,
+    left: x * tileWpx,
+    top: 0
+  });
+}
+
+const rowBuf = await sharp({
+  create: {
+    width: fabricWidthPx,
+    height: tileHpx,
+    channels: 4,
+    background: { r: 255, g: 255, b: 255, alpha: 0 }
+  }
+})
+  .composite(composites)
+  .toBuffer();
+
+console.log("Row buffer size (bytes):", rowBuf.length);
+
+// Convert DPI to pixels-per-mm for TIFF metadata
 const pxPerMm = dpi / 25.4;
 
-const tiffBuf = await sharp(tileBuf)
+// Export full-width strip as TIFF
+const tiffBuf = await sharp(rowBuf)
   .tiff({
     compression: "lzw",
     xres: pxPerMm,
     yres: pxPerMm,
-    resolutionUnit: "inch"
+    resolutionUnit: "inch",
   })
   .toBuffer();
 
+console.log("FULL WIDTH TIFF size (bytes):", tiffBuf.length);
 
-console.log("TIFF buffer size (bytes):", tiffBuf.length);
-// Upload TIFF tile to R2
+// Upload full-width TIFF
 const lineId = item.id || item.variant_id || "line";
-const tiffKey = s3KeyForOutput(orderId, lineId, "tile");
+const tiffKey = s3KeyForOutput(orderId, lineId, "full_width");
 const tiffUrl = await putPublicObject(tiffKey, "image/tiff", tiffBuf);
 
-console.log("TIFF uploaded:", tiffUrl);
+console.log("FULL WIDTH TIFF uploaded:", tiffUrl);
 
-continue; // stop here for now; avoid huge fabric build until tile upload is confirmed
+continue; // stop before height stacking
+
 
 // build composite operations
 const composites = [];
