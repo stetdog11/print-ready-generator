@@ -488,14 +488,31 @@ app.get("/auth", (req, res) => {
   return res.redirect(installUrl);
 });
 
-// 2) OAuth callback (Shopify redirects here with ?code=...)
+function verifyOAuthHmac(query, secret) {
+  const q = { ...query };
+  const providedHmac = String(q.hmac || "");
+  delete q.hmac;
+  delete q.signature; // old param, just in case
+
+  const message = Object.keys(q)
+    .sort()
+    .map((k) => `${k}=${Array.isArray(q[k]) ? q[k].join(",") : q[k]}`)
+    .join("&");
+
+  const digest = crypto.createHmac("sha256", secret).update(message).digest("hex");
+  return crypto.timingSafeEqual(Buffer.from(digest, "utf8"), Buffer.from(providedHmac, "utf8"));
+}
+
 app.get("/auth/callback", async (req, res) => {
   try {
     const { shop, code, state } = req.query;
 
     if (!shop || !code) return res.status(400).send("Missing shop or code");
-    if (!state || state !== global.__oauthState) {
-      return res.status(400).send("Invalid state");
+    if (!state || state !== global.__oauthState) return res.status(400).send("Invalid state");
+
+    // ✅ Verify HMAC from Shopify
+    if (!verifyOAuthHmac(req.query, process.env.SHOPIFY_API_SECRET)) {
+      return res.status(400).send("Invalid HMAC");
     }
 
     const tokenUrl = `https://${shop}/admin/oauth/access_token`;
@@ -518,18 +535,10 @@ app.get("/auth/callback", async (req, res) => {
     }
 
     console.log("✅ SHOPIFY_ADMIN_TOKEN (SAVE THIS):", data.access_token);
-
-    // For now just show success so you know it worked.
-    // Copy the shpat_ token from Render logs and paste into Render env var SHOPIFY_ADMIN_TOKEN.
-    return res.send("✅ Installed. Check Render logs for SHOPIFY_ADMIN_TOKEN (shpat_...)");
+    return res.send("✅ Installed. Check Render logs for SHOPIFY_ADMIN_TOKEN.");
   } catch (err) {
     console.error("❌ /auth/callback error:", err);
     return res.status(500).send("Callback error. Check Render logs.");
   }
-});
-
-const LISTEN_PORT = Number(process.env.PORT || 8080);
-app.listen(LISTEN_PORT, "0.0.0.0", () => {
-  console.log(`Server running on :${LISTEN_PORT}`);
 });
 
