@@ -226,6 +226,30 @@ console.log("Processing order:", {
         const tiffUrl = await putPublicObject(tiffKey, "image/tiff", tiffBuf);
 
         console.log("FULL WIDTH TIFF uploaded:", tiffUrl);
+// ---- WRITE RESULTS BACK TO SHOPIFY ORDER METAFIELDS ----
+try {
+  const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
+  const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
+
+  // Build repeat size text (you can change formatting later if you want)
+  const repeatSize = `${tileWIn}" x ${tileHIn}"`;
+
+  // Qty/yards: right now you're passing qty in line item props
+  const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
+
+  // Write to metafields by DISPLAY NAME (matches what you see in Shopify UI)
+  await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
+    "Print File URL": tiffUrl,
+    "Print Width": String(maxWidthIn || 64),
+    "DPI": String(dpi || 300),
+    "Repeat Size": repeatSize,
+    "Rotation": String(rotateDeg || 0),
+    "Yards": yards,
+  });
+
+} catch (e) {
+  console.log("❌ Failed writing metafields back to Shopify:", e?.message || e);
+}
 
         // stop before height stacking (safe)
         continue;
@@ -319,6 +343,121 @@ function verifyShopifyWebhook(rawBody, hmacHeader) {
     );
   } catch {
     return false;
+  }
+}
+// ---------------- SHOPIFY HELPERS (ORDER METAFIELDS) ----------------
+
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
+
+async function shopifyGraphQL(shopDomain, adminToken, query, variables = {}) {
+  if (!shopDomain) throw new Error("Missing SHOP env (e.g. paradise-printing-2.myshopify.com)");
+  if (!adminToken) throw new Error("Missing SHOPIFY_ADMIN_TOKEN env");
+
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": adminToken,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  const json = await resp.json();
+  if (!resp.ok) {
+    throw new Error(`Shopify GraphQL HTTP ${resp.status}: ${JSON.stringify(json).slice(0, 800)}`);
+  }
+  if (json.errors?.length) {
+    throw new Error(`Shopify GraphQL errors: ${JSON.stringify(json.errors).slice(0, 800)}`);
+  }
+  return json.data;
+}
+
+async function getOrderMetafieldDefinitionsByName(shopDomain, adminToken) {
+  // Pull metafield definitions for ORDER and map by display name -> {namespace, key, type}
+  const q = `
+    query defs($first:Int!) {
+      metafieldDefinitions(first:$first, ownerType: ORDER) {
+        nodes {
+          name
+          namespace
+          key
+          type { name }
+        }
+      }
+    }
+  `;
+  const data = await shopifyGraphQL(shopDomain, adminToken, q, { first: 100 });
+  const nodes = data?.metafieldDefinitions?.nodes || [];
+  const map = new Map();
+  for (const d of nodes) {
+    if (!d?.name) continue;
+    map.set(String(d.name).trim().toLowerCase(), {
+      namespace: d.namespace,
+      key: d.key,
+      type: d.type?.name || "single_line_text_field",
+    });
+  }
+  return map;
+}
+
+function coerceMetafieldValue(typeName, value) {
+  // Keep it safe and predictable
+  const t = String(typeName || "").toLowerCase();
+  if (value == null) return "";
+
+  // Shopify expects "number_integer" and "number_decimal" as strings too.
+  if (t.includes("number_integer")) return String(parseInt(value, 10) || 0);
+  if (t.includes("number_decimal")) return String(Number(value) || 0);
+
+  // For URL type, string is fine.
+  return String(value);
+}
+
+async function setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderIdNum, fieldsByDisplayName) {
+  // fieldsByDisplayName example:
+  // { "Print File URL": "https://...", "DPI": "300", "Print Width": "64", ... }
+  const defMap = await getOrderMetafieldDefinitionsByName(shopDomain, adminToken);
+
+  const ownerId = `gid://shopify/Order/${orderIdNum}`;
+  const metafields = [];
+
+  for (const [displayName, rawVal] of Object.entries(fieldsByDisplayName || {})) {
+    const def = defMap.get(String(displayName).trim().toLowerCase());
+    if (!def) {
+      console.log(`⚠️ Metafield definition not found for display name: "${displayName}". Skipping.`);
+      continue;
+    }
+    metafields.push({
+      ownerId,
+      namespace: def.namespace,
+      key: def.key,
+      type: def.type, // must match the definition type
+      value: coerceMetafieldValue(def.type, rawVal),
+    });
+  }
+
+  if (!metafields.length) {
+    console.log("⚠️ No metafields to write (none matched definitions).");
+    return;
+  }
+
+  const m = `
+    mutation set($metafields:[MetafieldsSetInput!]!) {
+      metafieldsSet(metafields:$metafields) {
+        metafields { id namespace key }
+        userErrors { field message }
+      }
+    }
+  `;
+
+  const data = await shopifyGraphQL(shopDomain, adminToken, m, { metafields });
+
+  const errs = data?.metafieldsSet?.userErrors || [];
+  if (errs.length) {
+    console.log("❌ metafieldsSet userErrors:", errs);
+  } else {
+    console.log("✅ Order metafields updated:", data?.metafieldsSet?.metafields?.length || 0);
   }
 }
 
