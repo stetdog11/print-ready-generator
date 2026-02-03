@@ -462,6 +462,71 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => {
   res.status(200).send("Print Ready Generator App is running");
 });
+function buildInstallUrl({ shop, scopes, redirectUri, state }) {
+  const params = new URLSearchParams({
+    client_id: process.env.SHOPIFY_API_KEY,
+    scope: scopes,
+    redirect_uri: redirectUri,
+    state,
+  });
+  return `https://${shop}/admin/oauth/authorize?${params.toString()}`;
+}
+
+// 1) Start OAuth (you can hit this in your browser)
+app.get("/auth", (req, res) => {
+  const shop = (req.query.shop || process.env.SHOP || "").toString().trim();
+  if (!shop) return res.status(400).send("Missing ?shop=your-store.myshopify.com");
+
+  const scopes = (process.env.SCOPES || "read_orders,write_orders,read_products,write_products").trim();
+  const redirectUri = `${process.env.APP_URL.replace(/\/$/, "")}/auth/callback`;
+
+  const state = crypto.randomBytes(16).toString("hex");
+  // store state in memory temporarily (good enough for your single-store setup)
+  global.__oauthState = state;
+
+  const installUrl = buildInstallUrl({ shop, scopes, redirectUri, state });
+  return res.redirect(installUrl);
+});
+
+// 2) OAuth callback (Shopify redirects here with ?code=...)
+app.get("/auth/callback", async (req, res) => {
+  try {
+    const { shop, code, state } = req.query;
+
+    if (!shop || !code) return res.status(400).send("Missing shop or code");
+    if (!state || state !== global.__oauthState) {
+      return res.status(400).send("Invalid state");
+    }
+
+    const tokenUrl = `https://${shop}/admin/oauth/access_token`;
+
+    const tokenRes = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: process.env.SHOPIFY_API_KEY,
+        client_secret: process.env.SHOPIFY_API_SECRET,
+        code,
+      }),
+    });
+
+    const data = await tokenRes.json();
+
+    if (!data.access_token) {
+      console.error("❌ Token exchange failed:", data);
+      return res.status(500).send("Token exchange failed. Check Render logs.");
+    }
+
+    console.log("✅ SHOPIFY_ADMIN_TOKEN (SAVE THIS):", data.access_token);
+
+    // For now just show success so you know it worked.
+    // Copy the shpat_ token from Render logs and paste into Render env var SHOPIFY_ADMIN_TOKEN.
+    return res.send("✅ Installed. Check Render logs for SHOPIFY_ADMIN_TOKEN (shpat_...)");
+  } catch (err) {
+    console.error("❌ /auth/callback error:", err);
+    return res.status(500).send("Callback error. Check Render logs.");
+  }
+});
 
 const LISTEN_PORT = Number(process.env.PORT || 8080);
 app.listen(LISTEN_PORT, "0.0.0.0", () => {
