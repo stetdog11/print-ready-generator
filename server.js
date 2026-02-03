@@ -534,7 +534,6 @@ app.get("/auth/callback", async (req, res) => {
       return res.status(500).send("Token exchange failed. Check Render logs.");
     }
 
-    console.log("✅ SHOPIFY_ADMIN_TOKEN (SAVE THIS):", data.access_token);
     return res.send("✅ Installed. Check Render logs for SHOPIFY_ADMIN_TOKEN.");
   } catch (err) {
     console.error("❌ /auth/callback error:", err);
