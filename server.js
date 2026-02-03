@@ -27,17 +27,44 @@ app.post(
       const body = req.body.toString("utf8");
       const order = JSON.parse(body);
 
-      // Prevent double-processing if multiple webhooks hit for the same order
       const orderId = order.id;
 
-      global.__processedOrders = global.__processedOrders || new Set();
+global.__processedOrders = global.__processedOrders || new Set();
 
-      if (global.__processedOrders.has(orderId)) {
-        console.log("Already processed order, skipping:", orderId);
-        return res.status(200).send("ok");
-      }
+// ---- Decide if we should process this order ----
+// Normal payments:
+const isPaid = String(order.financial_status || "").toLowerCase() === "paid";
 
-      global.__processedOrders.add(orderId);
+// COD test / COD workflow:
+const gateways = (order.payment_gateway_names || []).map(s => String(s).toLowerCase());
+const isCOD =
+  gateways.some(g => g.includes("cash on delivery") || g === "cod" || g.includes("cash_on_delivery"));
+
+// If it's not paid AND not COD, do nothing (but DO NOT mark as processed)
+if (!isPaid && !isCOD) {
+  console.log("Skipping - not paid and not COD:", {
+    orderId,
+    financial_status: order.financial_status,
+    payment_gateway_names: order.payment_gateway_names
+  });
+  return res.status(200).send("ok");
+}
+
+// ---- Now it's allowed to process, so dedupe safely ----
+if (global.__processedOrders.has(orderId)) {
+  console.log("Already processed order, skipping:", orderId);
+  return res.status(200).send("ok");
+}
+
+global.__processedOrders.add(orderId);
+
+console.log("Processing order:", {
+  orderId,
+  reason: isPaid ? "paid" : "cod",
+  financial_status: order.financial_status,
+  payment_gateway_names: order.payment_gateway_names
+});
+
 
       console.log("ORDER WEBHOOK RECEIVED");
       const lineItems = order.line_items || [];
