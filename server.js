@@ -542,7 +542,6 @@ app.get("/auth/callback", async (req, res) => {
   }
 });
 
-import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import multer from "multer";
