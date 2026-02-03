@@ -139,6 +139,7 @@ console.log("Processing order:", {
         // Rotate FIRST, then resize to exact target dims
         const tileBuf = await sharp(imgBuf)
           .rotate(rotateDeg)
+          .flop() // mirror for sublimation
           .resize(tileWpx, tileHpx, { fit: "cover" })
           .toBuffer();
 
