@@ -535,12 +535,16 @@ app.get("/api/print-url", async (req, res) => {
 
     const nodes = data?.order?.metafields?.nodes || [];
 
-    const hit = nodes.find((m) => {
-      const v = String(m.value || "");
-      return v.startsWith("http") && v.toLowerCase().includes(".tiff");
-    });
+   // Look specifically for the Print File URL metafield
+const hit = nodes.find(m =>
+  m.key === "print_file_url" || m.key === "print-file-url"
+);
 
-    return res.json({ printFileUrl: hit?.value || "" });
+// Fallback: return empty string if not found
+return res.json({
+  printFileUrl: hit?.value || ""
+});
+
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: e?.message || "error" });
