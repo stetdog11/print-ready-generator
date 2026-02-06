@@ -548,8 +548,6 @@ app.get("/api/print-url", async (req, res) => {
 });
 
 app.post("/api/upload", upload.single("file"), async (req, res) => {
-
-app.post("/api/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "missing_file" });
     const uploadId = crypto.randomBytes(12).toString("hex");
