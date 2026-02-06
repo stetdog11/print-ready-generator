@@ -477,7 +477,41 @@ async function setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderIdN
       console.log(`⚠️ Metafield definition not found for display name: "${displayName}". Skipping.`);
       continue;
     }
-    app.get("/api/print-url", async (req, res) => {
+
+    metafields.push({
+      ownerId,
+      namespace: def.namespace,
+      key: def.key,
+      type: def.type, // must match the definition type
+      value: coerceMetafieldValue(def.type, rawVal),
+    });
+  }
+
+  if (!metafields.length) {
+    console.log("⚠️ No metafields to write (none matched definitions).");
+    return;
+  }
+
+  const m = `
+    mutation set($metafields:[MetafieldsSetInput!]!) {
+      metafieldsSet(metafields:$metafields) {
+        metafields { id namespace key }
+        userErrors { field message }
+      }
+    }
+  `;
+
+  const data = await shopifyGraphQL(shopDomain, adminToken, m, { metafields });
+
+  const errs = data?.metafieldsSet?.userErrors || [];
+  if (errs.length) {
+    console.log("❌ metafieldsSet userErrors:", errs);
+  } else {
+    console.log("✅ Order metafields updated:", data?.metafieldsSet?.metafields?.length || 0);
+  }
+} // <-- end of setOrderMetafieldsByDisplayNames
+
+app.get("/api/print-url", async (req, res) => {
   try {
     const orderId = String(req.query.orderId || "").trim();
     if (!orderId) return res.status(400).json({ error: "missing_orderId" });
@@ -513,38 +547,7 @@ async function setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderIdN
   }
 });
 
-    metafields.push({
-      ownerId,
-      namespace: def.namespace,
-      key: def.key,
-      type: def.type, // must match the definition type
-      value: coerceMetafieldValue(def.type, rawVal),
-    });
-  }
-
-  if (!metafields.length) {
-    console.log("⚠️ No metafields to write (none matched definitions).");
-    return;
-  }
-
-  const m = `
-    mutation set($metafields:[MetafieldsSetInput!]!) {
-      metafieldsSet(metafields:$metafields) {
-        metafields { id namespace key }
-        userErrors { field message }
-      }
-    }
-  `;
-
-  const data = await shopifyGraphQL(shopDomain, adminToken, m, { metafields });
-
-  const errs = data?.metafieldsSet?.userErrors || [];
-  if (errs.length) {
-    console.log("❌ metafieldsSet userErrors:", errs);
-  } else {
-    console.log("✅ Order metafields updated:", data?.metafieldsSet?.metafields?.length || 0);
-  }
-}
+app.post("/api/upload", upload.single("file"), async (req, res) => {
 
 app.post("/api/upload", upload.single("file"), async (req, res) => {
   try {
