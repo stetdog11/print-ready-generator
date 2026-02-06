@@ -309,9 +309,17 @@ await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
 );
 
 app.use(express.json({ type: ["application/json"] }));
-app.use(cors({ origin: true }));
-// Allow Shopify Admin extension to call this API (safe)
-app.use("/api", cors({ origin: true }));
+
+// Allow Shopify Admin (and your shop domain) to call your API
+app.use(cors({
+  origin: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+
+// Preflight support
+app.options("*", cors({ origin: true }));
+
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ ok: true, ts: Date.now() });
@@ -545,6 +553,53 @@ return res.json({
   printFileUrl: hit?.value || ""
 });
 
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: e?.message || "error" });
+  }
+});
+app.post("/api/print-ready", async (req, res) => {
+  try {
+    const orderGid = String(req.query.orderGid || "").trim();
+    if (!orderGid) return res.status(400).json({ error: "missing_orderGid" });
+
+    // orderGid looks like: gid://shopify/Order/6488753406023
+    const orderId = orderGid.split("/").pop();
+    if (!orderId) return res.status(400).json({ error: "bad_orderGid" });
+
+    const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
+    const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
+
+    // Pull order metafields (same approach as /api/print-url)
+    const q = `
+      query($id: ID!) {
+        order(id: $id) {
+          metafields(first: 50) {
+            nodes { namespace key value }
+          }
+        }
+      }
+    `;
+
+    const data = await shopifyGraphQL(shopDomain, adminToken, q, {
+      id: `gid://shopify/Order/${orderId}`,
+    });
+
+    const nodes = data?.order?.metafields?.nodes || [];
+
+    // IMPORTANT: This must match the *actual* key of your "Print File URL" metafield definition.
+    // Your code currently tries: print_file_url or print-file-url
+    const hit = nodes.find(m =>
+      m.key === "print_file_url" || m.key === "print-file-url"
+    );
+
+    const downloadUrl = hit?.value || "";
+
+    // Return both; extension uses previewUrl or downloadUrl
+    return res.json({
+      downloadUrl,
+      previewUrl: downloadUrl, // TIFF may not preview; but at least this confirms the URL is being returned.
+    });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: e?.message || "error" });
