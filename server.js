@@ -233,8 +233,8 @@ try {
   const repeatSize = `${tileWIn}" x ${tileHIn}"`;
   const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
 
-  const noteBlock =
-`PRINT FILE (CLICK TO OPEN):
+const noteBlock =
+`PRINT FILE:
 ${tiffUrl}
 
 Yards: ${yards}
@@ -243,6 +243,7 @@ Repeat: ${repeatSize}
 DPI: ${dpi}
 Print Width: ${maxWidthIn}"
 Material: ${props.material || ""}`;
+
 
   await appendOrderNote(shopDomain, adminToken, orderId, noteBlock);
   console.log("✅ Order note updated with printable link");
