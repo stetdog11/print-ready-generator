@@ -80,7 +80,13 @@ console.log("Processing order:", {
 
       const printableItems = lineItems
         .map((item) => ({ item, props: propsArrayToObject(item.properties) }))
-        .filter(({ props }) => props.upload_url || props.upload_id);
+        .filter(({ props }) =>
+  props.upload_url ||
+  props.upload_id ||
+  props["Scale Tool - Upload URL"] ||
+  props["Scale Tool - Upload ID"]
+);
+
 
       console.log(
         `Line items: ${lineItems.length} | Printable items: ${printableItems.length}`
@@ -88,18 +94,44 @@ console.log("Processing order:", {
 
       for (const { item, props } of printableItems) {
         console.log("PROCESSING PRINT ITEM:", item.title);
-        console.log({
-          upload_url: props.upload_url,
-          dpi: props.dpi,
-          tile_w: props.tile_w,
-          tile_h: props.tile_h,
-          rotate: props.rotate,
-          max_width_in: props.max_width_in,
-          qty: props.qty,
-        });
+      
+console.log({
+  upload_url: props.upload_url,
+  dpi: props.dpi,
+  tile_w: props.tile_w,
+  tile_h: props.tile_h,
+  rotate: props.rotate,
+  max_width_in: props.max_width_in,
+  qty: props.qty,
+});
 
-        // STEP C.2 — Download the uploaded image and log its size
-        const uploadUrl = props.upload_url;
+// ✅ Normalize property names from Shopify -> internal keys
+if (!props.upload_id && props["Scale Tool - Upload ID"]) props.upload_id = props["Scale Tool - Upload ID"];
+if (!props.upload_url && props["Scale Tool - Upload URL"]) props.upload_url = props["Scale Tool - Upload URL"];
+
+if (!props.dpi && props["Scale Tool - DPI"]) props.dpi = props["Scale Tool - DPI"];
+if (!props.tile_w && props["Scale Tool - Tile Width (in)"]) props.tile_w = props["Scale Tool - Tile Width (in)"];
+if (!props.tile_h && props["Scale Tool - Tile Height (in)"]) props.tile_h = props["Scale Tool - Tile Height (in)"];
+if (!props.rotate && props["Scale Tool - Rotation"]) props.rotate = props["Scale Tool - Rotation"];
+if (!props.max_width_in && props["Scale Tool - Max Width (in)"]) props.max_width_in = props["Scale Tool - Max Width (in)"];
+if (!props.qty && props["Scale Tool - Yards"]) props.qty = props["Scale Tool - Yards"];
+if (!props.material && props["Scale Tool - Material"]) props.material = props["Scale Tool - Material"];
+
+// (Optional) log after mapping so you can confirm it worked
+console.log("✅ Normalized props:", {
+  upload_id: props.upload_id,
+  upload_url: props.upload_url,
+  dpi: props.dpi,
+  tile_w: props.tile_w,
+  tile_h: props.tile_h,
+  rotate: props.rotate,
+  max_width_in: props.max_width_in,
+  qty: props.qty,
+  material: props.material,
+});
+
+// STEP C.2 — Download the uploaded image and log its size
+const uploadUrl = props.upload_url;
 
         console.log("Downloading image:", uploadUrl);
 
@@ -224,6 +256,22 @@ const tiffKey = s3KeyForOutput(orderId, lineId, "full_width");
 const tiffUrl = await putPublicObject(tiffKey, "image/tiff", tiffBuf);
 
 console.log("FULL WIDTH TIFF uploaded:", tiffUrl);
+// ✅ Build dashboard URL (this is the link you click from Shopify)
+const base = (process.env.APP_URL || "").replace(/\/$/, "");
+const uploadId = props.upload_id ? String(props.upload_id) : "";
+const dashboardUrl = uploadId ? `${base}/admin/uploads/${encodeURIComponent(uploadId)}` : "";
+
+// ✅ Save output into jobs so the dashboard can show the button
+if (uploadId) {
+  const j = jobs.get(uploadId) || { upload_url: props.upload_url || "", created_at: Date.now(), outputs: {} };
+  j.outputs = {
+    ...j.outputs,
+    full_width: tiffUrl,
+    order_id: orderId,
+    line_id: lineId,
+  };
+  jobs.set(uploadId, j);
+}
 
 // ---- APPEND CLICKABLE PRINT INFO TO ORDER NOTE ----
 try {
@@ -232,9 +280,12 @@ try {
 
   const repeatSize = `${tileWIn}" x ${tileHIn}"`;
   const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
-
+  
 const noteBlock =
-`PRINT FILE:
+`PRINT DASHBOARD (CLICK):
+${dashboardUrl || "(missing upload_id)"}
+
+PRINT FILE (DIRECT URL):
 ${tiffUrl}
 
 Yards: ${yards}
@@ -619,8 +670,8 @@ app.post("/webhooks/orders-create", express.raw({ type: "*/*" }), async (req, re
         .toBuffer();
 
       const lineId = li.id || li.variant_id || "line";
-      let tileUrl = null,
-        fullUrl = null;
+      let tileUrl = null;
+      let fullUrl = null;
 
       if (output === "tile" || output === "both") {
         tileUrl = await putPublicObject(
@@ -637,36 +688,126 @@ app.post("/webhooks/orders-create", express.raw({ type: "*/*" }), async (req, re
         );
       }
 
-      const uploadId = getProp(li, "Scale Tool - Upload ID");
+      const uploadId =
+        getProp(li, "Scale Tool - Upload ID") ||
+        getProp(li, "upload_id");
+
       if (uploadId) {
         const j = jobs.get(uploadId) || {
           upload_url: uploadUrl,
           created_at: Date.now(),
           outputs: {},
         };
+
         j.outputs = {
           ...j.outputs,
-          tile: tileUrl,
-          full_width: fullUrl,
-          order_id: orderId,
-          line_id: lineId,
+          tile: tileUrl || j.outputs?.tile || null,
+          full_width: fullUrl || j.outputs?.full_width || null,
+          order_id: orderId || j.outputs?.order_id || null,
+          line_id: lineId || j.outputs?.line_id || null,
+          dashboard_url: process.env.APP_URL
+            ? `${String(process.env.APP_URL).replace(/\/$/, "")}/admin/uploads/${encodeURIComponent(uploadId)}`
+            : null,
         };
+
         jobs.set(uploadId, j);
       }
     }
 
-    res.status(200).send("ok");
+    return res.status(200).send("ok");
   } catch (e) {
     console.error(e);
-    res.status(500).send("error");
+    return res.status(500).send("error");
   }
 });
 
+
 app.get("/admin/uploads/:uploadId", basicAuth, (req, res) => {
-  const j = jobs.get(req.params.uploadId);
-  if (!j) return res.status(404).json({ error: "not_found" });
-  res.json(j);
+  const uploadId = req.params.uploadId;
+  const j = jobs.get(uploadId);
+
+  if (!j) {
+    return res.status(404).send(`
+      <html><body style="font-family:Arial;padding:20px">
+        <h2>Not found</h2>
+        <p>No job found for upload_id: <b>${escapeHtml(uploadId)}</b></p>
+      </body></html>
+    `);
+  }
+
+  const fileUrl = j?.outputs?.full_width || "";
+  const orderId = j?.outputs?.order_id || "";
+  const lineId = j?.outputs?.line_id || "";
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  return res.send(`
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Print Dashboard</title>
+</head>
+<body style="font-family:Arial, sans-serif;background:#f6f7f8;margin:0;padding:24px">
+  <div style="max-width:760px;margin:0 auto;background:#fff;border-radius:14px;padding:18px;box-shadow:0 6px 24px rgba(0,0,0,.08)">
+    <h2 style="margin:0 0 10px 0">Print Dashboard</h2>
+
+    <div style="font-size:14px;line-height:1.5;color:#333;background:#f2f4f6;border-radius:12px;padding:12px">
+      <div><b>Upload ID:</b> ${escapeHtml(uploadId)}</div>
+      ${orderId ? `<div><b>Order ID:</b> ${escapeHtml(String(orderId))}</div>` : ``}
+      ${lineId ? `<div><b>Line ID:</b> ${escapeHtml(String(lineId))}</div>` : ``}
+    </div>
+
+    <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+      ${
+        fileUrl
+          ? `<a href="${fileUrl}" target="_blank" rel="noopener noreferrer"
+               style="display:inline-block;background:#14b8a6;color:#fff;text-decoration:none;
+                      padding:12px 14px;border-radius:12px;font-weight:700">
+               Open Print File
+             </a>`
+          : `<div style="color:#b00020;font-weight:700">No print file yet (full_width missing)</div>`
+      }
+
+      ${
+        fileUrl
+          ? `<button onclick="copyText()"
+              style="border:0;background:#14b8a6;color:#fff;padding:12px 14px;border-radius:12px;font-weight:700;cursor:pointer">
+              Copy File URL
+            </button>`
+          : ``
+      }
+    </div>
+
+    <div style="margin-top:14px;font-size:13px;color:#666">
+      Tip: If the file isn’t ready yet, refresh this page after a minute.
+    </div>
+  </div>
+
+<script>
+  const FILE_URL = ${JSON.stringify(fileUrl || "")};
+  function copyText(){
+    if (!FILE_URL) return;
+    navigator.clipboard.writeText(FILE_URL)
+      .then(()=>alert("Copied!"))
+      .catch(()=>prompt("Copy this:", FILE_URL));
+  }
+</script>
+</body>
+</html>
+  `);
 });
+
+// helper for HTML safety (keep OUTSIDE routes)
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 app.get("/", (req, res) => {
