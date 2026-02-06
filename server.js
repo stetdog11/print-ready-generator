@@ -312,6 +312,7 @@ try {
 
   await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
     "Print File URL": tiffUrl,
+    "Print Dashboard URL":dashboardUrl,
     "Print Width": String(maxWidthIn || 64),
     "DPI": String(dpi || 300),
     "Repeat Size": repeatSize,
