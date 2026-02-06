@@ -273,35 +273,6 @@ if (uploadId) {
   jobs.set(uploadId, j);
 }
 
-// ---- APPEND CLICKABLE PRINT INFO TO ORDER NOTE ----
-try {
-  const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
-  const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
-
-  const repeatSize = `${tileWIn}" x ${tileHIn}"`;
-  const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
-  
-const noteBlock =
-`PRINT DASHBOARD (CLICK):
-${dashboardUrl || "(missing upload_id)"}
-
-PRINT FILE (DIRECT URL):
-${tiffUrl}
-
-Yards: ${yards}
-Rotation: ${rotateDeg}
-Repeat: ${repeatSize}
-DPI: ${dpi}
-Print Width: ${maxWidthIn}"
-Material: ${props.material || ""}`;
-
-
-  await appendOrderNote(shopDomain, adminToken, orderId, noteBlock);
-  console.log("✅ Order note updated with printable link");
-} catch (e) {
-  console.log("❌ Failed to append order note:", e?.message || e);
-}
-
 // ---- WRITE RESULTS BACK TO SHOPIFY ORDER METAFIELDS ----
 try {
   const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
@@ -310,15 +281,17 @@ try {
   const repeatSize = `${tileWIn}" x ${tileHIn}"`;
   const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
 
-  await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
-    "Print File URL": tiffUrl,
-    "Print Dashboard URL":dashboardUrl,
-    "Print Width": String(maxWidthIn || 64),
-    "DPI": String(dpi || 300),
-    "Repeat Size": repeatSize,
-    "Rotation": String(rotateDeg || 0),
-    "Yards": yards,
-  });
+await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
+  "Print File URL": tiffUrl,
+  "Print Width": String(maxWidthIn || 64),
+  "DPI": String(dpi || 300),
+  "Repeat Size": repeatSize,
+  "Rotation": String(rotateDeg || 0),
+  "Yards": yards,
+  // Optional if you have a definition for it:
+  // "Material": String(props.material || ""),
+});
+
 } catch (e) {
   console.log("❌ Failed writing metafields back to Shopify:", e?.message || e);
 }
@@ -326,10 +299,6 @@ try {
         // stop before height stacking (safe)
         continue;
       }
-// Mark processed only after successful run
-if (printableItems.length > 0) {
-  global.__processedOrders.add(orderId);
-}
 
       res.status(200).send("OK");
     } catch (err) {
@@ -341,6 +310,8 @@ if (printableItems.length > 0) {
 
 app.use(express.json({ type: ["application/json"] }));
 app.use(cors({ origin: true }));
+// Allow Shopify Admin extension to call this API (safe)
+app.use("/api", cors({ origin: true }));
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ ok: true, ts: Date.now() });
@@ -421,53 +392,7 @@ function verifyShopifyWebhook(rawBody, hmacHeader) {
     return false;
   }
 }
-async function appendOrderNote(shopDomain, adminToken, orderId, noteBlock) {
-  // 1) Read existing note
-  const getRes = await fetch(
-    `https://${shopDomain}/admin/api/2025-01/orders/${orderId}.json?fields=id,note`,
-    {
-      headers: {
-        "X-Shopify-Access-Token": adminToken,
-        "Content-Type": "application/json",
-      },
-    }
-  );
 
-  if (!getRes.ok) {
-    throw new Error(`Failed to read order note (${getRes.status})`);
-  }
-
-  const getJson = await getRes.json();
-  const existingNote = (getJson?.order?.note || "").trim();
-
-  // 2) Append (don’t overwrite)
-  const combinedNote = existingNote
-    ? `${existingNote}\n\n${noteBlock}`
-    : noteBlock;
-
-  // 3) Write back
-  const putRes = await fetch(
-    `https://${shopDomain}/admin/api/2025-01/orders/${orderId}.json`,
-    {
-      method: "PUT",
-      headers: {
-        "X-Shopify-Access-Token": adminToken,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        order: {
-          id: Number(orderId),
-          note: combinedNote,
-        },
-      }),
-    }
-  );
-
-  if (!putRes.ok) {
-    const txt = await putRes.text();
-    throw new Error(`Failed to update order note (${putRes.status}): ${txt}`);
-  }
-}
 // ---------------- SHOPIFY HELPERS (ORDER METAFIELDS) ----------------
 
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
@@ -520,6 +445,7 @@ async function getOrderMetafieldDefinitionsByName(shopDomain, adminToken) {
       key: d.key,
       type: d.type?.name || "single_line_text_field",
     });
+   
   }
   return map;
 }
@@ -551,6 +477,42 @@ async function setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderIdN
       console.log(`⚠️ Metafield definition not found for display name: "${displayName}". Skipping.`);
       continue;
     }
+    app.get("/api/print-url", async (req, res) => {
+  try {
+    const orderId = String(req.query.orderId || "").trim();
+    if (!orderId) return res.status(400).json({ error: "missing_orderId" });
+
+    const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
+    const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
+
+    const q = `
+      query($id: ID!) {
+        order(id: $id) {
+          metafields(first: 50) {
+            nodes { namespace key value }
+          }
+        }
+      }
+    `;
+
+    const data = await shopifyGraphQL(shopDomain, adminToken, q, {
+      id: `gid://shopify/Order/${orderId}`,
+    });
+
+    const nodes = data?.order?.metafields?.nodes || [];
+
+    const hit = nodes.find((m) => {
+      const v = String(m.value || "");
+      return v.startsWith("http") && v.toLowerCase().includes(".tiff");
+    });
+
+    return res.json({ printFileUrl: hit?.value || "" });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: e?.message || "error" });
+  }
+});
+
     metafields.push({
       ownerId,
       namespace: def.namespace,
@@ -893,6 +855,7 @@ app.get("/auth/callback", async (req, res) => {
   }
 });
 const LISTEN_PORT = Number(process.env.PORT || 8080);
+
 app.listen(LISTEN_PORT, "0.0.0.0", () => {
   console.log(`Server running on :${LISTEN_PORT}`);
 });
