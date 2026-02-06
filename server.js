@@ -55,9 +55,6 @@ if (global.__processedOrders.has(orderId)) {
   console.log("Already processed order, skipping:", orderId);
   return res.status(200).send("ok");
 }
-
-global.__processedOrders.add(orderId);
-
 console.log("Processing order:", {
   orderId,
   reason: isPaid ? "paid" : "cod",
@@ -221,24 +218,46 @@ console.log("Processing order:", {
 
         console.log("FULL WIDTH TIFF size (bytes):", tiffBuf.length);
 
-        // Upload full-width TIFF
-        const lineId = item.id || item.variant_id || "line";
-        const tiffKey = s3KeyForOutput(orderId, lineId, "full_width");
-        const tiffUrl = await putPublicObject(tiffKey, "image/tiff", tiffBuf);
+// Upload full-width TIFF
+const lineId = item.id || item.variant_id || "line";
+const tiffKey = s3KeyForOutput(orderId, lineId, "full_width");
+const tiffUrl = await putPublicObject(tiffKey, "image/tiff", tiffBuf);
 
-        console.log("FULL WIDTH TIFF uploaded:", tiffUrl);
+console.log("FULL WIDTH TIFF uploaded:", tiffUrl);
+
+// ---- APPEND CLICKABLE PRINT INFO TO ORDER NOTE ----
+try {
+  const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
+  const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
+
+  const repeatSize = `${tileWIn}" x ${tileHIn}"`;
+  const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
+
+  const noteBlock =
+`PRINT FILE (CLICK TO OPEN):
+${tiffUrl}
+
+Yards: ${yards}
+Rotation: ${rotateDeg}
+Repeat: ${repeatSize}
+DPI: ${dpi}
+Print Width: ${maxWidthIn}"
+Material: ${props.material || ""}`;
+
+  await appendOrderNote(shopDomain, adminToken, orderId, noteBlock);
+  console.log("✅ Order note updated with printable link");
+} catch (e) {
+  console.log("❌ Failed to append order note:", e?.message || e);
+}
+
 // ---- WRITE RESULTS BACK TO SHOPIFY ORDER METAFIELDS ----
 try {
   const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
   const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
 
-  // Build repeat size text (you can change formatting later if you want)
   const repeatSize = `${tileWIn}" x ${tileHIn}"`;
-
-  // Qty/yards: right now you're passing qty in line item props
   const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
 
-  // Write to metafields by DISPLAY NAME (matches what you see in Shopify UI)
   await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
     "Print File URL": tiffUrl,
     "Print Width": String(maxWidthIn || 64),
@@ -247,7 +266,6 @@ try {
     "Rotation": String(rotateDeg || 0),
     "Yards": yards,
   });
-
 } catch (e) {
   console.log("❌ Failed writing metafields back to Shopify:", e?.message || e);
 }
@@ -255,6 +273,10 @@ try {
         // stop before height stacking (safe)
         continue;
       }
+// Mark processed only after successful run
+if (printableItems.length > 0) {
+  global.__processedOrders.add(orderId);
+}
 
       res.status(200).send("OK");
     } catch (err) {
@@ -344,6 +366,53 @@ function verifyShopifyWebhook(rawBody, hmacHeader) {
     );
   } catch {
     return false;
+  }
+}
+async function appendOrderNote(shopDomain, adminToken, orderId, noteBlock) {
+  // 1) Read existing note
+  const getRes = await fetch(
+    `https://${shopDomain}/admin/api/2025-01/orders/${orderId}.json?fields=id,note`,
+    {
+      headers: {
+        "X-Shopify-Access-Token": adminToken,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (!getRes.ok) {
+    throw new Error(`Failed to read order note (${getRes.status})`);
+  }
+
+  const getJson = await getRes.json();
+  const existingNote = (getJson?.order?.note || "").trim();
+
+  // 2) Append (don’t overwrite)
+  const combinedNote = existingNote
+    ? `${existingNote}\n\n${noteBlock}`
+    : noteBlock;
+
+  // 3) Write back
+  const putRes = await fetch(
+    `https://${shopDomain}/admin/api/2025-01/orders/${orderId}.json`,
+    {
+      method: "PUT",
+      headers: {
+        "X-Shopify-Access-Token": adminToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        order: {
+          id: Number(orderId),
+          note: combinedNote,
+        },
+      }),
+    }
+  );
+
+  if (!putRes.ok) {
+    const txt = await putRes.text();
+    throw new Error(`Failed to update order note (${putRes.status}): ${txt}`);
   }
 }
 // ---------------- SHOPIFY HELPERS (ORDER METAFIELDS) ----------------
