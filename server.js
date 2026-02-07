@@ -106,19 +106,104 @@ console.log({
   qty: props.qty,
 });
 
-// ✅ Normalize property names from Shopify -> internal keys
-if (!props.upload_id && props["Scale Tool - Upload ID"]) props.upload_id = props["Scale Tool - Upload ID"];
-if (!props.upload_url && props["Scale Tool - Upload URL"]) props.upload_url = props["Scale Tool - Upload URL"];
+// --------------------
+// ✅ Robust props normalize (supports ALL label variants)
+// --------------------
+function pick(props, ...names) {
+  for (const n of names) {
+    if (props[n] != null && String(props[n]).trim() !== "") return props[n];
+  }
+  return "";
+}
+function parseInches(v) {
+  if (v == null) return null;
+  const s = String(v).replace(/"/g, "").trim();
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+function parseNumber(v) {
+  if (v == null) return null;
+  const s = String(v).replace(/"/g, "").trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
 
-if (!props.dpi && props["Scale Tool - DPI"]) props.dpi = props["Scale Tool - DPI"];
-if (!props.tile_w && props["Scale Tool - Tile Width (in)"]) props.tile_w = props["Scale Tool - Tile Width (in)"];
-if (!props.tile_h && props["Scale Tool - Tile Height (in)"]) props.tile_h = props["Scale Tool - Tile Height (in)"];
-if (!props.rotate && props["Scale Tool - Rotation"]) props.rotate = props["Scale Tool - Rotation"];
-if (!props.max_width_in && props["Scale Tool - Max Width (in)"]) props.max_width_in = props["Scale Tool - Max Width (in)"];
-if (!props.qty && props["Scale Tool - Yards"]) props.qty = props["Scale Tool - Yards"];
-if (!props.material && props["Scale Tool - Material"]) props.material = props["Scale Tool - Material"];
+// upload_id / upload_url
+props.upload_id = pick(
+  props,
+  "upload_id",
+  "Scale Tool - Upload ID",
+  "Scale Tool - Upload Id"
+);
+props.upload_url = pick(
+  props,
+  "upload_url",
+  "Scale Tool - Upload URL",
+  "Scale Tool - Upload Url"
+);
 
-// (Optional) log after mapping so you can confirm it worked
+// dpi (you lock at 300, but accept variants)
+props.dpi = pick(
+  props,
+  "dpi",
+  "Scale Tool - DPI",
+  "Scale Tool - Dpi"
+) || "300";
+
+// tile width / height (accept all known names)
+props.tile_w = pick(
+  props,
+  "tile_w",
+  "tile_w_in",
+  "Scale Tool - Tile Width (in)",
+  "Scale Tool - Tile Width",
+  "Scale Tool - Target Repeat Width (in)",
+  "Scale Tool - Target Repeat Width",
+  "Scale Tool - Target Repeat"
+);
+
+props.tile_h = pick(
+  props,
+  "tile_h",
+  "tile_h_in",
+  "Scale Tool - Tile Height (in)",
+  "Scale Tool - Tile Height"
+);
+
+// rotation (accept deg variants)
+props.rotate = pick(
+  props,
+  "rotate",
+  "Scale Tool - Rotation",
+  "Scale Tool - Rotation (deg)",
+  "Scale Tool - Rotation (deg):"
+) || "0";
+
+// max width (accept variants, default 64)
+props.max_width_in = pick(
+  props,
+  "max_width_in",
+  "Scale Tool - Max Width (in)",
+  "Scale Tool - Max Width",
+  "Scale Tool - Max Width (in):"
+) || "64";
+
+// qty / yards
+props.qty = pick(
+  props,
+  "qty",
+  "Scale Tool - Yards",
+  "Yards"
+) || String(item.quantity || 1);
+
+// material (optional, but keep it)
+props.material = pick(
+  props,
+  "material",
+  "Scale Tool - Material"
+);
+
+// Log after mapping so you can confirm it worked
 console.log("✅ Normalized props:", {
   upload_id: props.upload_id,
   upload_url: props.upload_url,
@@ -128,11 +213,45 @@ console.log("✅ Normalized props:", {
   rotate: props.rotate,
   max_width_in: props.max_width_in,
   qty: props.qty,
-  material: props.material,
+  material: props.material
 });
 
+// --------------------
+// ✅ HARD REQUIREMENT: we must have upload_url + tile_w
+// --------------------
+const uploadUrl = String(props.upload_url || "").trim();
+if (!uploadUrl) {
+  console.log("❌ Skipping item: missing upload_url");
+  continue;
+}
+
+// Tile width is required to build repeat
+const tileWIn = parseInches(props.tile_w);
+if (!tileWIn) {
+  console.log("❌ Skipping item: missing tile_w (repeat width)");
+  continue;
+}
+
+// Tile height can be missing; we will auto-calc from image aspect later if needed
+let tileHIn = parseInches(props.tile_h);
+
+const dpi = Math.round(parseNumber(props.dpi) || 300);
+const rotateDeg = parseNumber(props.rotate) || 0;
+const maxWidthIn = parseNumber(props.max_width_in) || 64;
+const yards = String(props.qty || item.quantity || 1);
+
+// Expose these for later code (so you can keep your existing logic)
+props.__tileWIn = tileWIn;
+props.__tileHIn = tileHIn; // may be null
+props.__dpi = dpi;
+props.__rotateDeg = rotateDeg;
+props.__maxWidthIn = maxWidthIn;
+props.__yards = yards;
+
+
 // STEP C.2 — Download the uploaded image and log its size
-const uploadUrl = props.upload_url;
+const uploadUrl = String(props.upload_url || "").trim();
+
 
         console.log("Downloading image:", uploadUrl);
 
@@ -148,23 +267,32 @@ const uploadUrl = props.upload_url;
 
         // STEP C.3 — Read image metadata (sanity check)
         const meta = await sharp(imgBuf, { failOn: "none" }).metadata();
-        console.log("Image metadata:", {
+      console.log("Image metadata:", {
           format: meta.format,
           width: meta.width,
           height: meta.height,
         });
 
         // STEP C.4 — Build the scaled tile at 300 DPI
-        const tileWIn = parseFloat(props.tile_w);
-        const tileHIn = parseFloat(props.tile_h);
-        const dpi = parseInt(props.dpi || "300", 10);
+     const tileWIn = Number(props.__tileWIn);
+let tileHIn = props.__tileHIn != null ? Number(props.__tileHIn) : null;
 
-        const tileWpx = Math.round(tileWIn * dpi);
-        const tileHpx = Math.round(tileHIn * dpi);
+const dpi = Number(props.__dpi || 300);
+const rotateDeg = Number(props.__rotateDeg || 0);
+const maxWidthIn = Number(props.__maxWidthIn || 64);
 
-        console.log("Tile target (px):", tileWpx, tileHpx);
+// ✅ If tile height is missing, derive it from image aspect ratio
+if (!tileHIn) {
+  const aspect = meta.height && meta.width ? meta.height / meta.width : 1;
+  tileHIn = Math.max(1, Math.round(tileWIn * dpi * aspect)) / dpi;
+  console.log("ℹ️ tile_h missing — derived from aspect:", { tileHIn });
+}
 
-        const rotateDeg = Number(props.rotate || 0) || 0;
+// ✅ NOW compute px sizes (must exist before resize/log)
+const tileWpx = Math.round(tileWIn * dpi);
+const tileHpx = Math.round(tileHIn * dpi);
+
+console.log("Tile target (px):", tileWpx, tileHpx);
 
         // Rotate FIRST, then resize to exact target dims
         const tileBuf = await sharp(imgBuf)
