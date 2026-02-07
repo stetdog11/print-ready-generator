@@ -410,12 +410,12 @@ async function shopifyGraphQL(shopDomain, adminToken, query, variables = {}) {
   if (!adminToken) throw new Error("Missing SHOPIFY_ADMIN_TOKEN env");
 
   const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": adminToken,
-    },
+ const API_BASE = "https://YOUR_RENDER_DOMAIN_HERE"; // <-- put your Render app URL here (no trailing slash)
+
+const res = await fetch(`${API_BASE}/api/print-ready?orderGid=${encodeURIComponent(orderGid)}`, {
+  method: "POST",
+});
+
     body: JSON.stringify({ query, variables }),
   });
 
@@ -589,11 +589,11 @@ app.post("/api/print-ready", async (req, res) => {
 
     // IMPORTANT: This must match the *actual* key of your "Print File URL" metafield definition.
     // Your code currently tries: print_file_url or print-file-url
-    const hit = nodes.find(m =>
-      m.key === "print_file_url" || m.key === "print-file-url"
-    );
+   const API_BASE = "https://YOUR_RENDER_DOMAIN_HERE"; // <-- put your Render app URL here (no trailing slash)
 
-    const downloadUrl = hit?.value || "";
+const res = await fetch(`${API_BASE}/api/print-ready?orderGid=${encodeURIComponent(orderGid)}`, {
+  method: "POST",
+});
 
     // Return both; extension uses previewUrl or downloadUrl
     return res.json({
