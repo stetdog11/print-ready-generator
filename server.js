@@ -61,6 +61,7 @@ console.log("Processing order:", {
   financial_status: order.financial_status,
   payment_gateway_names: order.payment_gateway_names
 });
+global.__processedOrders.add(orderId);
 
 
       console.log("ORDER WEBHOOK RECEIVED");
@@ -410,24 +411,28 @@ async function shopifyGraphQL(shopDomain, adminToken, query, variables = {}) {
   if (!adminToken) throw new Error("Missing SHOPIFY_ADMIN_TOKEN env");
 
   const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
- const API_BASE = "https://YOUR_RENDER_DOMAIN_HERE"; // <-- put your Render app URL here (no trailing slash)
 
-const res = await fetch(`${API_BASE}/api/print-ready?orderGid=${encodeURIComponent(orderGid)}`, {
-  method: "POST",
-});
-
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": adminToken,
+    },
     body: JSON.stringify({ query, variables }),
   });
 
   const json = await resp.json();
+
   if (!resp.ok) {
     throw new Error(`Shopify GraphQL HTTP ${resp.status}: ${JSON.stringify(json).slice(0, 800)}`);
   }
   if (json.errors?.length) {
     throw new Error(`Shopify GraphQL errors: ${JSON.stringify(json.errors).slice(0, 800)}`);
   }
+
   return json.data;
 }
+
 
 async function getOrderMetafieldDefinitionsByName(shopDomain, adminToken) {
   // Pull metafield definitions for ORDER and map by display name -> {namespace, key, type}
@@ -518,59 +523,17 @@ async function setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderIdN
     console.log("✅ Order metafields updated:", data?.metafieldsSet?.metafields?.length || 0);
   }
 } // <-- end of setOrderMetafieldsByDisplayNames
-
-app.get("/api/print-url", async (req, res) => {
-  try {
-    const orderId = String(req.query.orderId || "").trim();
-    if (!orderId) return res.status(400).json({ error: "missing_orderId" });
-
-    const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
-    const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
-
-    const q = `
-      query($id: ID!) {
-        order(id: $id) {
-          metafields(first: 50) {
-            nodes { namespace key value }
-          }
-        }
-      }
-    `;
-
-    const data = await shopifyGraphQL(shopDomain, adminToken, q, {
-      id: `gid://shopify/Order/${orderId}`,
-    });
-
-    const nodes = data?.order?.metafields?.nodes || [];
-
-   // Look specifically for the Print File URL metafield
-const hit = nodes.find(m =>
-  m.key === "print_file_url" || m.key === "print-file-url"
-);
-
-// Fallback: return empty string if not found
-return res.json({
-  printFileUrl: hit?.value || ""
-});
-
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: e?.message || "error" });
-  }
-});
 app.post("/api/print-ready", async (req, res) => {
   try {
     const orderGid = String(req.query.orderGid || "").trim();
     if (!orderGid) return res.status(400).json({ error: "missing_orderGid" });
 
-    // orderGid looks like: gid://shopify/Order/6488753406023
     const orderId = orderGid.split("/").pop();
     if (!orderId) return res.status(400).json({ error: "bad_orderGid" });
 
     const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
     const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
 
-    // Pull order metafields (same approach as /api/print-url)
     const q = `
       query($id: ID!) {
         order(id: $id) {
@@ -587,18 +550,23 @@ app.post("/api/print-ready", async (req, res) => {
 
     const nodes = data?.order?.metafields?.nodes || [];
 
-    // IMPORTANT: This must match the *actual* key of your "Print File URL" metafield definition.
-    // Your code currently tries: print_file_url or print-file-url
-   const API_BASE = "https://YOUR_RENDER_DOMAIN_HERE"; // <-- put your Render app URL here (no trailing slash)
+    const hit = nodes.find(m =>
+      m.namespace === "custom" &&
+      (m.key === "print_file_url" || m.key === "print-file-url")
+    );
 
-const res = await fetch(`${API_BASE}/api/print-ready?orderGid=${encodeURIComponent(orderGid)}`, {
-  method: "POST",
-});
+    if (!hit || !hit.value) {
+      return res.status(404).json({
+        error: "print_file_url_missing",
+        availableMetafields: nodes.map(m => `${m.namespace}.${m.key}`),
+      });
+    }
 
-    // Return both; extension uses previewUrl or downloadUrl
+    const downloadUrl = hit.value;
+
     return res.json({
       downloadUrl,
-      previewUrl: downloadUrl, // TIFF may not preview; but at least this confirms the URL is being returned.
+      previewUrl: downloadUrl,
     });
   } catch (e) {
     console.error(e);
