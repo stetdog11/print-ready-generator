@@ -614,11 +614,19 @@ app.post("/webhooks/orders-create", express.raw({ type: "*/*" }), async (req, re
     const orderId = order.id;
 
     for (const li of order.line_items || []) {
-      const uploadUrl = getProp(li, "Scale Tool - Upload URL");
+     const uploadUrl =
+  getProp(li, "upload_url") ||
+  getProp(li, "Scale Tool - Upload URL");
+
       const output = (getProp(li, "Scale Tool - Output") || "tile").toLowerCase();
-      const tileWidthIn =
-        parseInches(getProp(li, "Scale Tool - Tile Width (in)")) ||
-        parseInches(getProp(li, "Scale Tool - Target Repeat Width (in)"));
+     const tileWidthIn =
+  parseInches(getProp(li, "tile_w")) ||
+  parseInches(getProp(li, "Scale Tool - Tile Width (in)")) ||
+  parseInches(getProp(li, "Scale Tool - Target Repeat Width (in)"));
+
+const tileHeightIn =
+  parseInches(getProp(li, "tile_h")) ||
+  parseInches(getProp(li, "Scale Tool - Tile Height (in)"));
 
       if (!uploadUrl || !tileWidthIn) continue;
 
@@ -631,8 +639,13 @@ app.post("/webhooks/orders-create", express.raw({ type: "*/*" }), async (req, re
 
       const tileWpx = Math.max(1, Math.round(tileWidthIn * outDpi));
       const meta = await sharp(imgBuf).metadata();
+      const tileHpx = tileHeightIn
+  ? Math.max(1, Math.round(tileHeightIn * outDpi))
+  : (() => {
       const aspect = meta.height && meta.width ? meta.height / meta.width : 1;
-      const tileHpx = Math.max(1, Math.round(tileWpx * aspect));
+      return Math.max(1, Math.round(tileWpx * aspect));
+    })();
+
 
       const tileTiff = await sharp(imgBuf)
         .resize(tileWpx, tileHpx, { fit: "fill" })
