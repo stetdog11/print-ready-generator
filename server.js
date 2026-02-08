@@ -293,7 +293,6 @@ console.log("Tile target (px):", tileWpx, tileHpx);
         console.log("Tile buffer size (bytes):", tileBuf.length);
 
         // STEP C.5 — Repeat tile across fabric width (one row)
-        const maxWidthIn = parseFloat(props.max_width_in);
         const fabricWidthPx = Math.round(maxWidthIn * dpi);
 
         console.log("Fabric width (px):", fabricWidthPx);
