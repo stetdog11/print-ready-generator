@@ -83,12 +83,15 @@ const lineItems = fullOrder.line_items || [];
 
       const printableItems = lineItems
         .map((item) => ({ item, props: propsArrayToObject(item.properties) }))
-        .filter(({ props }) =>
-  props.upload_url ||
-  props.upload_id ||
-  props["Scale Tool - Upload URL"] ||
-  props["Scale Tool - Upload ID"]
-);
+     .filter(({ props }) => {
+  if (!props) return false;
+  return Object.keys(props).some(k =>
+    k.toLowerCase().includes("upload") &&
+    props[k] &&
+    String(props[k]).trim() !== ""
+  );
+});
+
 
 
       console.log(
