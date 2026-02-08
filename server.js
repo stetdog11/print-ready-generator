@@ -66,6 +66,7 @@ global.__processedOrders.add(orderId);
 
       console.log("ORDER WEBHOOK RECEIVED");
      const fullOrder = await fetchFullOrder(orderId);
+const fullOrder = await fetchFullOrder(orderId);
 const lineItems = fullOrder.line_items || [];
 
       // STEP B: Only process real printed-fabric items
@@ -522,6 +523,36 @@ function verifyShopifyWebhook(rawBody, hmacHeader) {
 // ---------------- SHOPIFY HELPERS (ORDER METAFIELDS) ----------------
 
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
+
+/* ===============================
+   FULL ORDER FETCH (REQUIRED)
+   =============================== */
+async function fetchFullOrder(orderId) {
+  const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
+  const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
+
+  if (!shopDomain) throw new Error("Missing SHOP env");
+  if (!adminToken) throw new Error("Missing SHOPIFY_ADMIN_TOKEN env");
+
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders/${orderId}.json?fields=id,line_items,financial_status,payment_gateway_names`;
+
+  const resp = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": adminToken,
+    },
+  });
+
+  const json = await resp.json();
+
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch full order ${orderId}: ${resp.status}`);
+  }
+
+  return json.order;
+}
 
 async function shopifyGraphQL(shopDomain, adminToken, query, variables = {}) {
   if (!shopDomain) throw new Error("Missing SHOP env (e.g. paradise-printing-2.myshopify.com)");
