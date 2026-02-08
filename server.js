@@ -535,7 +535,7 @@ async function fetchFullOrder(orderId) {
   if (!shopDomain) throw new Error("Missing SHOP env");
   if (!adminToken) throw new Error("Missing SHOPIFY_ADMIN_TOKEN env");
 
-  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders/${orderId}.json?fields=id,line_items,financial_status,payment_gateway_names`;
+ const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders/${orderId}.json`;
 
   const resp = await fetch(url, {
     method: "GET",
@@ -762,6 +762,17 @@ app.post("/webhooks/orders-create", express.raw({ type: "*/*" }), async (req, re
     const orderId = order.id;
     const fullOrder = await fetchFullOrder(orderId);
 const lineItems = fullOrder.line_items || [];
+console.log("DEBUG lineItems count:", lineItems.length);
+
+console.log(
+  "DEBUG first item properties:",
+  JSON.stringify(lineItems?.[0]?.properties || null)
+);
+
+console.log(
+  "DEBUG property names per item:",
+  lineItems.map(li => (li.properties || []).map(p => p?.name ?? p?.key))
+);
 
 // Always fetch the full order from Admin API so line_item properties are guaranteed
 
