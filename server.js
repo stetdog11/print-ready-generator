@@ -269,12 +269,6 @@ if (!imgRes.ok) {
         });
 
         // STEP C.4 — Build the scaled tile at 300 DPI
-     const tileWIn = Number(props.__tileWIn);
-let tileHIn = props.__tileHIn != null ? Number(props.__tileHIn) : null;
-
-const dpi = Number(props.__dpi || 300);
-const rotateDeg = Number(props.__rotateDeg || 0);
-const maxWidthIn = Number(props.__maxWidthIn || 64);
 
 // ✅ If tile height is missing, derive it from image aspect ratio
 if (!tileHIn) {
