@@ -66,7 +66,7 @@ global.__processedOrders.add(orderId);
 
       console.log("ORDER WEBHOOK RECEIVED");
      const fullOrder = await fetchFullOrder(orderId);
-const fullOrder = await fetchFullOrder(orderId);
+
 const lineItems = fullOrder.line_items || [];
 
       // STEP B: Only process real printed-fabric items
@@ -523,7 +523,7 @@ function verifyShopifyWebhook(rawBody, hmacHeader) {
 // ---------------- SHOPIFY HELPERS (ORDER METAFIELDS) ----------------
 
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
+
 
 /* ===============================
    FULL ORDER FETCH (REQUIRED)
@@ -760,27 +760,13 @@ app.post("/webhooks/orders-create", express.raw({ type: "*/*" }), async (req, re
 
     const order = JSON.parse(raw);
     const orderId = order.id;
-// Always fetch the full order from Admin API so line_item properties are guaranteed
-async function fetchFullOrder(orderId) {
-  const shopDomain = process.env.SHOP || process.env.SHOP_DOMAIN;
-  const adminToken = process.env.SHOPIFY_ADMIN_TOKEN;
-  if (!shopDomain || !adminToken) throw new Error("Missing SHOP/SHOPIFY_ADMIN_TOKEN");
-
-  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders/${orderId}.json?fields=id,line_items,financial_status,payment_gateway_names`;
-  const resp = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": adminToken,
-    },
-  });
-  const json = await resp.json();
-  if (!resp.ok) throw new Error(`Failed to fetch full order: ${resp.status} ${JSON.stringify(json).slice(0,300)}`);
-  return json.order;
-}
-
+    const fullOrder = await fetchFullOrder(orderId);
 const lineItems = fullOrder.line_items || [];
 
-    for (const li of order.line_items || []) {
+// Always fetch the full order from Admin API so line_item properties are guaranteed
+
+    for (const li of lineItems) {
+
      const uploadUrl =
   getProp(li, "upload_url") ||
   getProp(li, "Scale Tool - Upload URL");
