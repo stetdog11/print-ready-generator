@@ -250,18 +250,13 @@ props.__yards = yards;
 
 
 // STEP C.2 — Download the uploaded image and log its size
-const uploadUrl = String(props.upload_url || "").trim();
-
-
+        
         console.log("Downloading image:", uploadUrl);
 
-        const imgRes = await fetch(uploadUrl);
-        if (!imgRes.ok) {
-          throw new Error(
-            `Image download failed: ${imgRes.status} ${imgRes.statusText}`
-          );
-        }
-
+       const imgRes = await fetch(uploadUrl);
+if (!imgRes.ok) {
+  throw new Error(`Image download failed: ${imgRes.status} ${imgRes.statusText}`);
+}
         const imgBuf = Buffer.from(await imgRes.arrayBuffer());
         console.log("Downloaded image size (bytes):", imgBuf.length);
 
