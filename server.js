@@ -778,7 +778,6 @@ async function fetchFullOrder(orderId) {
   return json.order;
 }
 
-const fullOrder = await fetchFullOrder(orderId);
 const lineItems = fullOrder.line_items || [];
 
     for (const li of order.line_items || []) {
