@@ -5,7 +5,9 @@ import multer from "multer";
 import crypto from "crypto";
 import fetch from "node-fetch";
 import sharp from "sharp";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
 
 const s3 = new S3Client({
   region: process.env.S3_REGION,
@@ -15,6 +17,17 @@ const s3 = new S3Client({
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
   },
 });
+// Separate client for DESIGN library (does NOT affect existing s3 client)
+const designR2 = new S3Client({
+  region: "auto",
+  endpoint: process.env.DESIGN_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.DESIGN_ACCESS_KEY_ID,
+    secretAccessKey: process.env.DESIGN_SECRET_ACCESS_KEY,
+  },
+});
+
+const DESIGN_BUCKET = process.env.DESIGN_BUCKET;
 
 const app = express();
 app.use(morgan("dev"));
@@ -441,6 +454,68 @@ app.use(cors({
 
 // Preflight support
 app.options("*", cors({ origin: true }));
+// ---- DESIGN LIBRARY API (folders + designs) ----
+app.get("/api/design-health", (req, res) => {
+  res.json({ ok: true, bucket: process.env.DESIGN_BUCKET || null });
+});
+
+// List top-level "folders"
+app.get("/api/design-folders", async (req, res) => {
+  try {
+    const out = await designR2.send(
+      new ListObjectsV2Command({
+        Bucket: DESIGN_BUCKET,
+        Delimiter: "/",
+      })
+    );
+
+    const folders = (out.CommonPrefixes || [])
+      .map((p) => p.Prefix.replace(/\/$/, ""))
+      .filter(Boolean);
+
+    res.json({ folders });
+  } catch (err) {
+    console.error("design-folders error", err);
+    res.status(500).json({ error: "Failed to list folders" });
+  }
+});
+
+// List designs inside a folder (signed URLs)
+app.get("/api/designs", async (req, res) => {
+  try {
+    const folder = String(req.query.folder || "").trim();
+    if (!folder) return res.status(400).json({ error: "Folder required" });
+
+    const prefix = folder.replace(/\/+$/, "") + "/";
+
+    const out = await designR2.send(
+      new ListObjectsV2Command({
+        Bucket: DESIGN_BUCKET,
+        Prefix: prefix,
+      })
+    );
+
+    const keys = (out.Contents || [])
+      .map((o) => o.Key)
+      .filter((k) => k && !k.endsWith("/"));
+
+    const items = await Promise.all(
+      keys.map(async (Key) => {
+        const url = await getSignedUrl(
+          designR2,
+          new GetObjectCommand({ Bucket: DESIGN_BUCKET, Key }),
+          { expiresIn: 60 * 60 } // 1 hour
+        );
+        return { key: Key, url };
+      })
+    );
+
+    res.json({ folder, items });
+  } catch (err) {
+    console.error("designs error", err);
+    res.status(500).json({ error: "Failed to list designs" });
+  }
+});
 
 
 app.get("/api/health", (req, res) => {
