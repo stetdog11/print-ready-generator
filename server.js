@@ -108,10 +108,12 @@ const lineItems = fullOrder.line_items || [];
 
 
       console.log(
-        `Line items: ${lineItems.length} | Printable items: ${printableItems.length}`
-      );
+  `Line items: ${lineItems.length} | Printable items: ${printableItems.length}`
+);
 
-      for (const { item, props } of printableItems) {
+let itemNumber = 1;
+
+for (const { item, props } of printableItems) {
         console.log("PROCESSING PRINT ITEM:", item.title);
       
 console.log({
@@ -417,7 +419,7 @@ try {
   const yards = props.qty != null ? String(props.qty) : String(item.quantity || 1);
 
 await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
-  "Print File URL": tiffUrl,
+ [`Print File URL ${itemNumber}`]: tiffUrl,
   "Print Width": String(maxWidthIn || 64),
   "DPI": String(dpi || 300),
   "Repeat Size": repeatSize,
@@ -426,7 +428,7 @@ await setOrderMetafieldsByDisplayNames(shopDomain, adminToken, orderId, {
   // Optional if you have a definition for it:
   // "Material": String(props.material || ""),
 });
-
+itemNumber++;
 } catch (e) {
   console.log("❌ Failed writing metafields back to Shopify:", e?.message || e);
 }
