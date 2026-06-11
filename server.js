@@ -518,16 +518,27 @@ app.post("/api/paybright/charge", async (req, res) => {
       }),
     });
 
-    const data = await response.json();
+    const rawText = await response.text();
 
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: "PayBright charge failed",
-        details: data,
-      });
-    }
+console.log("PAYBRIGHT STATUS:", response.status);
+console.log("PAYBRIGHT RESPONSE:", rawText);
 
-    return res.json(data);
+let data = {};
+try {
+  data = rawText ? JSON.parse(rawText) : {};
+} catch {
+  data = { raw: rawText };
+}
+
+if (!response.ok) {
+  return res.status(response.status).json({
+    error: "PayBright charge failed",
+    status: response.status,
+    details: data,
+  });
+}
+
+return res.json(data);
   } catch (err) {
     console.error("PayBright charge error:", err);
     return res.status(500).json({ error: err.message || "Payment error" });
