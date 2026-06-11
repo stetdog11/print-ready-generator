@@ -456,6 +456,83 @@ app.use(cors({
 
 // Preflight support
 app.options("*", cors({ origin: true }));
+app.post("/api/paybright/charge", async (req, res) => {
+  try {
+    const {
+      amount,
+      card,
+      expiry_month,
+      expiry_year,
+      cvv2,
+      name,
+      customer,
+    } = req.body || {};
+
+    if (!amount || !card || !expiry_month || !expiry_year || !cvv2) {
+      return res.status(400).json({ error: "Missing payment fields" });
+    }
+
+    const apiBase =
+      process.env.PAYBRIGHT_API_BASE ||
+      "https://api.sandbox.paybrightgateway.com/api/v2";
+
+    const apiKey = process.env.PAYBRIGHT_API_KEY;
+    const secret = process.env.PAYBRIGHT_SECRET;
+
+    if (!apiKey || !secret) {
+      return res.status(500).json({ error: "PayBright credentials missing" });
+    }
+
+    const auth = Buffer.from(`${apiKey}:${secret}`).toString("base64");
+
+    const response = await fetch(`${apiBase}/transactions/charge`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${auth}`,
+        "User-Agent": "ParadisePrintingCustomSite/1.0",
+      },
+      body: JSON.stringify({
+        amount: Number(amount),
+        card: String(card).replace(/\s/g, ""),
+        expiry_month: Number(expiry_month),
+        expiry_year: Number(expiry_year),
+        cvv2: String(cvv2),
+        name: name || customer?.name || "Paradise Printing Customer",
+        capture: true,
+        save_card: false,
+        customer: {
+          send_receipt: true,
+          email: customer?.email || "",
+        },
+        billing_info: {
+          first_name: customer?.name || "",
+          phone: customer?.phone || "",
+          zip: customer?.zip || "",
+          country: "US",
+        },
+        transaction_details: {
+          description: "Paradise Printing order",
+          order_number: `PP-${Date.now()}`,
+        },
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: "PayBright charge failed",
+        details: data,
+      });
+    }
+
+    return res.json(data);
+  } catch (err) {
+    console.error("PayBright charge error:", err);
+    return res.status(500).json({ error: err.message || "Payment error" });
+  }
+});
 // ---- DESIGN LIBRARY API (folders + designs) ----
 app.get("/api/design-health", (req, res) => {
   res.json({ ok: true, bucket: process.env.DESIGN_BUCKET || null });
