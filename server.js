@@ -476,13 +476,12 @@ app.post("/api/paybright/charge", async (req, res) => {
       "https://api.sandbox.paybrightgateway.com/api/v2";
 
     const apiKey = process.env.PAYBRIGHT_API_KEY;
-    const secret = process.env.PAYBRIGHT_SECRET;
 
-    if (!apiKey || !secret) {
+    if (!apiKey) {
       return res.status(500).json({ error: "PayBright credentials missing" });
     }
 
-    const auth = Buffer.from(`${apiKey}:${secret}`).toString("base64");
+    const auth = Buffer.from(`${apiKey}`).toString("base64");
 
     const response = await fetch(`${apiBase}/transactions/charge`, {
       method: "POST",
