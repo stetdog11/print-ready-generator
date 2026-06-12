@@ -518,7 +518,8 @@ app.post("/api/paybright/charge", async (req, res) => {
     });
 
     const rawText = await response.text();
-
+console.log("API KEY:", apiKey);
+console.log("SECRET EXISTS:", !!secret);
 console.log("PAYBRIGHT STATUS:", response.status);
 console.log("PAYBRIGHT RESPONSE:", rawText);
 
