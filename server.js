@@ -534,6 +534,15 @@ if (!response.ok) {
   });
 }
 
+orders.unshift({
+  id: data.reference_number,
+  date: new Date().toISOString(),
+  amount,
+  status: data.status,
+  customer,
+  cartItems: req.body.cartItems || [],
+});
+
 return res.json(data);
   } catch (err) {
     console.error("PayBright charge error:", err);
@@ -636,7 +645,7 @@ APP_URL,
 } = process.env;
 
 const jobs = new Map(); // upload_id -> { upload_url, created_at, outputs: {tile, full_width, order_id, line_id} }
-
+const orders = [];
 function basicAuth(req, res, next) {
   if (!ADMIN_USER || !ADMIN_PASS) return next();
   const hdr = req.headers.authorization || "";
@@ -1224,7 +1233,9 @@ app.get("/auth/callback", async (req, res) => {
   }
 });
 const LISTEN_PORT = Number(process.env.PORT || 8080);
-
+app.get("/api/orders", (req, res) => {
+  res.json(orders);
+});
 app.listen(LISTEN_PORT, "0.0.0.0", () => {
   console.log(`Server running on :${LISTEN_PORT}`);
 });
