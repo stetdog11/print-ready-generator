@@ -29,10 +29,7 @@ const designR2 = new S3Client({
 });
 
 const DESIGN_BUCKET = process.env.DESIGN_BUCKET;
-const ORDERS_FILE = path.join(
-  process.cwd(),
-  "orders.json"
-);
+const ORDERS_KEY = "orders/orders.json";
 const app = express();
 app.use(morgan("dev"));
 
@@ -460,6 +457,32 @@ app.use(cors({
 
 // Preflight support
 app.options("*", cors({ origin: true }));
+async function loadOrders() {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: ORDERS_KEY,
+    });
+
+    const response = await s3.send(command);
+
+    const text = await response.Body.transformToString();
+
+    orders = JSON.parse(text);
+  } catch {
+    orders = [];
+  }
+}
+
+async function saveOrders() {
+  await putPublicObject(
+    ORDERS_KEY,
+    "application/json",
+    Buffer.from(
+      JSON.stringify(orders, null, 2)
+    )
+  );
+}
 app.post("/api/paybright/charge", async (req, res) => {
   try {
     const {
@@ -550,10 +573,8 @@ const orderRecord = {
 };
 
 orders.unshift(orderRecord);
-    fs.writeFileSync(
-  ORDERS_FILE,
-  JSON.stringify(orders, null, 2)
-);
+
+await saveOrders();
     try {
   const firstItem = req.body.cartItems?.[0];
 
@@ -695,13 +716,6 @@ APP_URL,
 
 const jobs = new Map();
 
-let orders = [];
-
-if (fs.existsSync(ORDERS_FILE)) {
-  orders = JSON.parse(
-    fs.readFileSync(ORDERS_FILE, "utf8")
-  );
-}
 function basicAuth(req, res, next) {
   if (!ADMIN_USER || !ADMIN_PASS) return next();
   const hdr = req.headers.authorization || "";
@@ -1292,6 +1306,7 @@ const LISTEN_PORT = Number(process.env.PORT || 8080);
 app.get("/api/orders", (req, res) => {
   res.json(orders);
 });
+await loadOrders();
 app.listen(LISTEN_PORT, "0.0.0.0", () => {
   console.log(`Server running on :${LISTEN_PORT}`);
 });
