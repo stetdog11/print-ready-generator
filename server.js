@@ -541,8 +541,9 @@ orders.unshift({
   status: data.status,
   customer,
   cartItems: req.body.cartItems || [],
+  tiffUrl: null,
 });
-
+console.log("ORDER SAVED:", data.reference_number);
 return res.json(data);
   } catch (err) {
     console.error("PayBright charge error:", err);
