@@ -575,8 +575,7 @@ const orderRecord = {
 
 orders.unshift(orderRecord);
 
-await saveOrders();
-    try {
+try {
   const firstItem = req.body.cartItems?.[0];
 
   if (firstItem?.uploadUrl) {
@@ -613,6 +612,8 @@ await saveOrders();
     err
   );
 }
+    await saveOrders();
+    
 console.log("ORDER SAVED:", data.reference_number);
 return res.json(data);
   } catch (err) {
