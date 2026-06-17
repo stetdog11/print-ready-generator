@@ -30,6 +30,7 @@ const designR2 = new S3Client({
 
 const DESIGN_BUCKET = process.env.DESIGN_BUCKET;
 const ORDERS_KEY = "orders/orders.json";
+let orders = [];
 const app = express();
 app.use(morgan("dev"));
 
