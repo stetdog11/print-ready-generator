@@ -534,7 +534,7 @@ if (!response.ok) {
   });
 }
 
-orders.unshift({
+const orderRecord = {
   id: data.reference_number,
   date: new Date().toISOString(),
   amount,
@@ -542,7 +542,46 @@ orders.unshift({
   customer,
   cartItems: req.body.cartItems || [],
   tiffUrl: null,
-});
+};
+
+orders.unshift(orderRecord);
+    try {
+  const firstItem = req.body.cartItems?.[0];
+
+  if (firstItem?.uploadUrl) {
+    const imgRes = await fetch(firstItem.uploadUrl);
+
+    const imgBuf = Buffer.from(
+      await imgRes.arrayBuffer()
+    );
+
+    const tiffBuf = await sharp(imgBuf)
+      .tiff({
+        compression: "lzw",
+      })
+      .toBuffer();
+
+    const tiffKey = `outputs/orders/${data.reference_number}.tiff`;
+
+    const tiffUrl = await putPublicObject(
+      tiffKey,
+      "image/tiff",
+      tiffBuf
+    );
+
+    orderRecord.tiffUrl = tiffUrl;
+
+    console.log(
+      "TIFF CREATED:",
+      tiffUrl
+    );
+  }
+} catch (err) {
+  console.error(
+    "TIFF GENERATION FAILED",
+    err
+  );
+}
 console.log("ORDER SAVED:", data.reference_number);
 return res.json(data);
   } catch (err) {
