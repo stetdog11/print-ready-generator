@@ -1,4 +1,6 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
 import cors from "cors";
 import morgan from "morgan";
 import multer from "multer";
@@ -27,7 +29,10 @@ const designR2 = new S3Client({
 });
 
 const DESIGN_BUCKET = process.env.DESIGN_BUCKET;
-
+const ORDERS_FILE = path.join(
+  process.cwd(),
+  "orders.json"
+);
 const app = express();
 app.use(morgan("dev"));
 
@@ -545,6 +550,10 @@ const orderRecord = {
 };
 
 orders.unshift(orderRecord);
+    fs.writeFileSync(
+  ORDERS_FILE,
+  JSON.stringify(orders, null, 2)
+);
     try {
   const firstItem = req.body.cartItems?.[0];
 
@@ -684,8 +693,15 @@ APP_URL,
   ADMIN_PASS,
 } = process.env;
 
-const jobs = new Map(); // upload_id -> { upload_url, created_at, outputs: {tile, full_width, order_id, line_id} }
-const orders = [];
+const jobs = new Map();
+
+let orders = [];
+
+if (fs.existsSync(ORDERS_FILE)) {
+  orders = JSON.parse(
+    fs.readFileSync(ORDERS_FILE, "utf8")
+  );
+}
 function basicAuth(req, res, next) {
   if (!ADMIN_USER || !ADMIN_PASS) return next();
   const hdr = req.headers.authorization || "";
