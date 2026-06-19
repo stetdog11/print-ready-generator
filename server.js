@@ -576,10 +576,10 @@ const orderRecord = {
 orders.unshift(orderRecord);
 
 try {
-  const firstItem = req.body.cartItems?.[0];
+  for (const item of req.body.cartItems || []) {
 
-  if (firstItem?.uploadUrl) {
-    const imgRes = await fetch(firstItem.uploadUrl);
+  if (!item?.uploadUrl) continue;
+    const imgRes = await fetch(Item.uploadUrl);
 
     const imgBuf = Buffer.from(
       await imgRes.arrayBuffer()
