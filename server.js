@@ -579,7 +579,7 @@ try {
   for (const item of req.body.cartItems || []) {
 
   if (!item?.uploadUrl) continue;
-    const imgRes = await fetch(Item.uploadUrl);
+    const imgRes = await fetch(item.uploadUrl);
 
     const imgBuf = Buffer.from(
       await imgRes.arrayBuffer()
@@ -591,7 +591,8 @@ try {
       })
       .toBuffer();
 
-    const tiffKey = `outputs/orders/${data.reference_number}.tiff`;
+    const tiffKey =
+  `outputs/orders/${data.reference_number}-${item.uploadId}.tiff`;
 
     const tiffUrl = await putPublicObject(
       tiffKey,
