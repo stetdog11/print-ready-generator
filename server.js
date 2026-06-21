@@ -570,7 +570,7 @@ const orderRecord = {
   status: data.status,
   customer,
   cartItems: req.body.cartItems || [],
-  tiffUrl: null,
+  tiffUrls: [],
 };
 
 orders.unshift(orderRecord);
@@ -600,7 +600,7 @@ try {
       tiffBuf
     );
 
-    orderRecord.tiffUrl = tiffUrl;
+    orderRecord.tiffUrls.push(tiffUrl);
 
     console.log(
       "TIFF CREATED:",
