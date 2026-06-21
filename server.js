@@ -452,12 +452,15 @@ app.use(express.json({ type: ["application/json"] }));
 // Allow Shopify Admin (and your shop domain) to call your API
 app.use(cors({
   origin: true,
-  methods: ["GET", "POST", "OPTIONS"],
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
 // Preflight support
-app.options("*", cors({ origin: true }));
+app.options("*", cors({
+  origin: true,
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+}));
 async function loadOrders() {
   try {
     const command = new GetObjectCommand({
