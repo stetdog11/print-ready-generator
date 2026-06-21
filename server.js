@@ -1309,6 +1309,37 @@ const LISTEN_PORT = Number(process.env.PORT || 8080);
 app.get("/api/orders", (req, res) => {
   res.json(orders);
 });
+app.post("/api/orders/:id/complete", async (req, res) => {
+  const order = orders.find(
+    (o) => String(o.id) === String(req.params.id)
+  );
+
+  if (!order) {
+    return res.status(404).json({
+      error: "Order not found",
+    });
+  }
+
+  order.status = "Completed";
+
+  await saveOrders();
+
+  res.json({
+    success: true,
+  });
+});
+
+app.delete("/api/orders/:id", async (req, res) => {
+  orders = orders.filter(
+    (o) => String(o.id) !== String(req.params.id)
+  );
+
+  await saveOrders();
+
+  res.json({
+    success: true,
+  });
+});
 await loadOrders();
 app.listen(LISTEN_PORT, "0.0.0.0", () => {
   console.log(`Server running on :${LISTEN_PORT}`);
