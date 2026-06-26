@@ -581,8 +581,11 @@ orders.unshift(orderRecord);
 try {
   for (const item of req.body.cartItems || []) {
 
-  if (!item?.uploadUrl) continue;
-    const imgRes = await fetch(item.uploadUrl);
+  const imageUrl = item.uploadUrl || item.image;
+
+  if (!imageUrl) continue;
+
+  const imgRes = await fetch(imageUrl);
 
     const imgBuf = Buffer.from(
       await imgRes.arrayBuffer()
@@ -595,7 +598,7 @@ try {
       .toBuffer();
 
     const tiffKey =
-  `outputs/orders/${data.reference_number}-${item.uploadId}.tiff`;
+  `outputs/orders/${data.reference_number}-${(item.uploadId || "library")}.tiff`;
 
     const tiffUrl = await putPublicObject(
       tiffKey,
