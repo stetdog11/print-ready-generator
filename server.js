@@ -580,25 +580,86 @@ orders.unshift(orderRecord);
 
 try {
   for (const item of req.body.cartItems || []) {
+    const imageUrl = item.uploadUrl || item.image;
 
-  const imageUrl = item.uploadUrl || item.image;
+    if (!imageUrl) continue;
 
-  if (!imageUrl) continue;
+    const repeatSize = Number(item.repeatSize || 1);
+    const dpi = 300;
+    const maxWidthIn = 56;
+    const rotateDeg = Number(item.rotation || 0);
 
-  const imgRes = await fetch(imageUrl);
+    const imgRes = await fetch(imageUrl);
+
+    if (!imgRes.ok) {
+      throw new Error(`Image download failed: ${imgRes.status}`);
+    }
 
     const imgBuf = Buffer.from(
       await imgRes.arrayBuffer()
     );
 
-    const tiffBuf = await sharp(imgBuf)
+    const meta = await sharp(imgBuf, { failOn: "none" }).metadata();
+
+    const aspect =
+      meta.height && meta.width
+        ? meta.height / meta.width
+        : 1;
+
+    const tileWpx = Math.round(repeatSize * dpi);
+    const tileHpx = Math.round(tileWpx * aspect);
+
+    const tileBuf = await sharp(imgBuf)
+      .rotate(rotateDeg)
+      .flop()
+      .resize(tileWpx, tileHpx, { fit: "cover" })
+      .toBuffer();
+
+    const fabricWidthPx = Math.round(maxWidthIn * dpi);
+    const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
+
+    const composites = [];
+
+    for (let x = 0; x < tilesAcross; x++) {
+      composites.push({
+        input: tileBuf,
+        left: x * tileWpx,
+        top: 0,
+      });
+    }
+
+    const rowBuf = await sharp({
+      create: {
+        width: fabricWidthPx,
+        height: tileHpx,
+        channels: 4,
+        background: {
+          r: 255,
+          g: 255,
+          b: 255,
+          alpha: 0,
+        },
+      },
+    })
+      .composite(composites)
+      .png()
+      .toBuffer();
+
+    const pxPerMm = dpi / 25.4;
+
+    const tiffBuf = await sharp(rowBuf)
       .tiff({
         compression: "lzw",
+        xres: pxPerMm,
+        yres: pxPerMm,
+        resolutionUnit: "inch",
       })
       .toBuffer();
 
+    const safeUploadId = item.uploadId || "library";
+
     const tiffKey =
-  `outputs/orders/${data.reference_number}-${(item.uploadId || "library")}.tiff`;
+      `outputs/orders/${data.reference_number}-${safeUploadId}.tiff`;
 
     const tiffUrl = await putPublicObject(
       tiffKey,
@@ -608,10 +669,9 @@ try {
 
     orderRecord.tiffUrls.push(tiffUrl);
 
-    console.log(
-      "TIFF CREATED:",
-      tiffUrl
-    );
+    console.log("TIFF CREATED:", tiffUrl);
+    console.log("Repeat size:", repeatSize);
+    console.log("Tiles across:", tilesAcross);
   }
 } catch (err) {
   console.error(
