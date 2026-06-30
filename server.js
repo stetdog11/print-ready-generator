@@ -352,13 +352,16 @@ console.log("Tile target (px):", tileWpx, tileHpx);
 
         // Build full-width strip (one row)
         const composites = [];
-        for (let x = 0; x < tilesAcross; x++) {
-          composites.push({
-            input: tileBuf,
-            left: x * tileWpx,
-            top: 0,
-          });
-        }
+
+for (let y = 0; y < tilesDown; y++) {
+  for (let x = 0; x < tilesAcross; x++) {
+    composites.push({
+      input: tileBuf,
+      left: x * tileWpx,
+      top: y * tileHpx,
+    });
+  }
+}
 
         const rowBuf = await sharp({
           create: {
@@ -585,9 +588,10 @@ try {
     if (!imageUrl) continue;
 
     const repeatSize = Number(item.repeatSize || 1);
-    const dpi = 300;
-    const maxWidthIn = 56;
-    const rotateDeg = Number(item.rotation || 0);
+const dpi = 300;
+const maxWidthIn = Number(item.maxWidthIn || item.printWidth || 56);
+const outputHeightIn = Number(item.outputHeightIn || item.previewSize || repeatSize);
+const rotateDeg = Number(item.rotation || 0);
 
     const imgRes = await fetch(imageUrl);
 
@@ -616,7 +620,10 @@ try {
       .toBuffer();
 
     const fabricWidthPx = Math.round(maxWidthIn * dpi);
-    const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
+const fabricHeightPx = Math.round(outputHeightIn * dpi);
+
+const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
+const tilesDown = Math.ceil(fabricHeightPx / tileHpx);
 
     const composites = [];
 
@@ -631,7 +638,7 @@ try {
     const rowBuf = await sharp({
       create: {
         width: fabricWidthPx,
-        height: tileHpx,
+        height: fabricHeightPx,
         channels: 4,
         background: {
           r: 255,
