@@ -315,12 +315,14 @@ console.log("Tile target (px):", tileWpx, tileHpx);
         console.log("Tile buffer size (bytes):", tileBuf.length);
 
         // STEP C.5 — Repeat tile across fabric width (one row)
-        const fabricWidthPx = Math.round(maxWidthIn * dpi);
+        const fabricWidthPx = tileWpx;
 
-        console.log("Fabric width (px):", fabricWidthPx);
+console.log("Fabric width (px):", fabricWidthPx);
 
-        // how many tiles fit across
-        const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
+// Only one tile across
+const tilesAcross = 1;
+  const fabricHeightPx = tileHpx;
+const tilesDown = 1;
         console.log("Tiles across:", tilesAcross);
 
         // STEP C.6 — Build a small "row preview" (safe)
@@ -364,9 +366,9 @@ for (let y = 0; y < tilesDown; y++) {
 }
 
         const rowBuf = await sharp({
-          create: {
-            width: fabricWidthPx,
-            height: tileHpx,
+  create: {
+    width: fabricWidthPx,
+    height: fabricHeightPx,
             channels: 4,
             background: { r: 255, g: 255, b: 255, alpha: 0 },
           },
