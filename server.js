@@ -313,15 +313,21 @@ console.log("Tile target (px):", tileWpx, tileHpx);
           .toBuffer();
 
         console.log("Tile buffer size (bytes):", tileBuf.length);
+const tileMeta = await sharp(tileBuf).metadata();
 
+console.log("Tile metadata:", {
+  width: tileMeta.width,
+  height: tileMeta.height,
+});
         // STEP C.5 — Repeat tile across fabric width (one row)
-        const fabricWidthPx = tileWpx;
 
-console.log("Fabric width (px):", fabricWidthPx);
+// Build the TIFF exactly the size of one repeat
+const fabricWidthPx = tileWpx;
+const fabricHeightPx = tileHpx;
 
-// Only one tile across
+console.log("Fabric size (px):", fabricWidthPx, fabricHeightPx);
+
 const tilesAcross = 1;
-  const fabricHeightPx = tileHpx;
 const tilesDown = 1;
         console.log("Tiles across:", tilesAcross);
 
@@ -364,7 +370,14 @@ for (let y = 0; y < tilesDown; y++) {
     });
   }
 }
-
+if (
+  tileWpx > fabricWidthPx ||
+  tileHpx > fabricHeightPx
+) {
+  throw new Error(
+    `Tile (${tileWpx}x${tileHpx}) is larger than canvas (${fabricWidthPx}x${fabricHeightPx})`
+  );
+}
         const rowBuf = await sharp({
   create: {
     width: fabricWidthPx,
@@ -591,8 +604,6 @@ try {
 
     const repeatSize = Number(item.repeatSize || 1);
 const dpi = 300;
-const maxWidthIn = Number(item.maxWidthIn || item.printWidth || 56);
-const outputHeightIn = Number(item.outputHeightIn || item.previewSize || repeatSize);
 const rotateDeg = Number(item.rotation || 0);
 
     const imgRes = await fetch(imageUrl);
@@ -620,23 +631,38 @@ const rotateDeg = Number(item.rotation || 0);
       .flop()
       .resize(tileWpx, tileHpx, { fit: "cover" })
       .toBuffer();
+const tileMeta = await sharp(tileBuf).metadata();
 
-    const fabricWidthPx = Math.round(maxWidthIn * dpi);
-const fabricHeightPx = Math.round(outputHeightIn * dpi);
+console.log("Tile metadata:", {
+  width: tileMeta.width,
+  height: tileMeta.height,
+});
+    // Generate exactly ONE repeat tile
+const fabricWidthPx = tileWpx;
+const fabricHeightPx = tileHpx;
 
-const tilesAcross = Math.ceil(fabricWidthPx / tileWpx);
-const tilesDown = Math.ceil(fabricHeightPx / tileHpx);
+const tilesAcross = 1;
+const tilesDown = 1;
 
     const composites = [];
 
-    for (let x = 0; x < tilesAcross; x++) {
-      composites.push({
-        input: tileBuf,
-        left: x * tileWpx,
-        top: 0,
-      });
-    }
-
+for (let y = 0; y < tilesDown; y++) {
+  for (let x = 0; x < tilesAcross; x++) {
+    composites.push({
+      input: tileBuf,
+      left: x * tileWpx,
+      top: y * tileHpx,
+    });
+  }
+}
+if (
+  tileWpx > fabricWidthPx ||
+  tileHpx > fabricHeightPx
+) {
+  throw new Error(
+    `Tile (${tileWpx}x${tileHpx}) is larger than canvas (${fabricWidthPx}x${fabricHeightPx})`
+  );
+}
     const rowBuf = await sharp({
       create: {
         width: fabricWidthPx,
@@ -1072,144 +1098,6 @@ function parseInches(str) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-
-app.post("/webhooks/orders-create", express.raw({ type: "*/*" }), async (req, res) => {
-  try {
-    const hmac = req.headers["x-shopify-hmac-sha256"];
-    const raw = req.body.toString("utf8");
-    if (!verifyShopifyWebhook(raw, hmac)) return res.status(401).send("Invalid HMAC");
-
-    const order = JSON.parse(raw);
-    const orderId = order.id;
-    const fullOrder = await fetchFullOrder(orderId);
-const lineItems = fullOrder.line_items || [];
-console.log("DEBUG lineItems count:", lineItems.length);
-
-console.log(
-  "DEBUG first item properties:",
-  JSON.stringify(lineItems?.[0]?.properties || null)
-);
-
-console.log(
-  "DEBUG property names per item:",
-  lineItems.map(li => (li.properties || []).map(p => p?.name ?? p?.key))
-);
-
-// Always fetch the full order from Admin API so line_item properties are guaranteed
-
-    for (const li of lineItems) {
-
-     const uploadUrl =
-  getProp(li, "upload_url") ||
-  getProp(li, "Scale Tool - Upload URL");
-
-      const output = (getProp(li, "Scale Tool - Output") || "tile").toLowerCase();
-     const tileWidthIn =
-  parseInches(getProp(li, "tile_w")) ||
-  parseInches(getProp(li, "Scale Tool - Tile Width (in)")) ||
-  parseInches(getProp(li, "Scale Tool - Target Repeat Width (in)"));
-
-const tileHeightIn =
-  parseInches(getProp(li, "tile_h")) ||
-  parseInches(getProp(li, "Scale Tool - Tile Height (in)"));
-
-      if (!uploadUrl || !tileWidthIn) continue;
-
-      const outDpi = Number(OUTPUT_DPI) || 300;
-      const fabricWidthIn = Number(FABRIC_WIDTH_IN) || 54;
-
-      const imgRes = await fetch(uploadUrl);
-      if (!imgRes.ok) throw new Error(`Failed to fetch upload_url: ${uploadUrl}`);
-      const imgBuf = Buffer.from(await imgRes.arrayBuffer());
-
-      const tileWpx = Math.max(1, Math.round(tileWidthIn * outDpi));
-      const meta = await sharp(imgBuf).metadata();
-      const tileHpx = tileHeightIn
-  ? Math.max(1, Math.round(tileHeightIn * outDpi))
-  : (() => {
-      const aspect = meta.height && meta.width ? meta.height / meta.width : 1;
-      return Math.max(1, Math.round(tileWpx * aspect));
-    })();
-
-
-      const tileTiff = await sharp(imgBuf)
-        .resize(tileWpx, tileHpx, { fit: "fill" })
-        .tiff({ compression: "lzw" })
-        .toBuffer();
-
-      const fullWpx = Math.max(1, Math.round(fabricWidthIn * outDpi));
-      const fullHpx = tileHpx;
-
-      const tilesAcross = Math.ceil(fullWpx / tileWpx);
-      const composites = [];
-      for (let i = 0; i < tilesAcross; i++) {
-        composites.push({ input: tileTiff, left: i * tileWpx, top: 0 });
-      }
-
-      const fullTiff = await sharp({
-        create: {
-          width: fullWpx,
-          height: fullHpx,
-          channels: 4,
-          background: { r: 255, g: 255, b: 255, alpha: 1 },
-        },
-      })
-        .composite(composites)
-        .tiff({ compression: "lzw" })
-        .toBuffer();
-
-      const lineId = li.id || li.variant_id || "line";
-      let tileUrl = null;
-      let fullUrl = null;
-
-      if (output === "tile" || output === "both") {
-        tileUrl = await putPublicObject(
-          s3KeyForOutput(orderId, lineId, "tile"),
-          "image/tiff",
-          tileTiff
-        );
-      }
-      if (output === "full_width" || output === "both") {
-        fullUrl = await putPublicObject(
-          s3KeyForOutput(orderId, lineId, "full_width"),
-          "image/tiff",
-          fullTiff
-        );
-      }
-
-      const uploadId =
-        getProp(li, "Scale Tool - Upload ID") ||
-        getProp(li, "upload_id");
-
-      if (uploadId) {
-        const j = jobs.get(uploadId) || {
-          upload_url: uploadUrl,
-          created_at: Date.now(),
-          outputs: {},
-        };
-
-        j.outputs = {
-          ...j.outputs,
-          tile: tileUrl || j.outputs?.tile || null,
-          full_width: fullUrl || j.outputs?.full_width || null,
-          order_id: orderId || j.outputs?.order_id || null,
-          line_id: lineId || j.outputs?.line_id || null,
-          dashboard_url: process.env.APP_URL
-            ? `${String(process.env.APP_URL).replace(/\/$/, "")}/admin/uploads/${encodeURIComponent(uploadId)}`
-            : null,
-        };
-
-        jobs.set(uploadId, j);
-      }
-    }
-
-    return res.status(200).send("ok");
-  } catch (e) {
-    console.error(e);
-    return res.status(500).send("error");
-  }
-});
-
 
 app.get("/admin/uploads/:uploadId", basicAuth, (req, res) => {
   const uploadId = req.params.uploadId;
