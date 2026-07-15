@@ -596,8 +596,8 @@ const orderRecord = {
 
 orders.unshift(orderRecord);
 
-try {
-  for (const item of req.body.cartItems || []) {
+for (const [itemIndex, item] of (req.body.cartItems || []).entries()) {
+  try {
     const imageUrl = item.uploadUrl || item.image;
 
     if (!imageUrl) continue;
@@ -693,8 +693,8 @@ if (
 
     const safeUploadId = item.uploadId || "library";
 
-    const tiffKey =
-      `outputs/orders/${data.reference_number}-${safeUploadId}.tiff`;
+const tiffKey =
+  `outputs/orders/${data.reference_number}-${safeUploadId}-item-${itemIndex + 1}.tiff`;
 
     const tiffUrl = await putPublicObject(
       tiffKey,
@@ -704,15 +704,15 @@ if (
 
     orderRecord.tiffUrls.push(tiffUrl);
 
-    console.log("TIFF CREATED:", tiffUrl);
+        console.log("TIFF CREATED:", tiffUrl);
     console.log("Repeat size:", repeatSize);
     console.log("Tiles across:", tilesAcross);
+  } catch (err) {
+    console.error(
+      `TIFF GENERATION FAILED FOR ITEM ${itemIndex + 1}`,
+      err
+    );
   }
-} catch (err) {
-  console.error(
-    "TIFF GENERATION FAILED",
-    err
-  );
 }
     await saveOrders();
     
