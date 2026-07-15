@@ -605,7 +605,7 @@ try {
     const repeatSize = Number(item.repeatSize || 1);
 const dpi = 300;
 const rotateDeg = Number(item.rotation || 0);
-
+console.log("Downloading image:", imageUrl);
     const imgRes = await fetch(imageUrl);
 
     if (!imgRes.ok) {
