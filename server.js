@@ -7,7 +7,13 @@ import multer from "multer";
 import crypto from "crypto";
 import fetch from "node-fetch";
 import sharp from "sharp";
-import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  ListObjectsV2Command,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const s3 = new S3Client({
@@ -721,6 +727,154 @@ return res.json(data);
   } catch (err) {
     console.error("PayBright charge error:", err);
     return res.status(500).json({ error: err.message || "Payment error" });
+  }
+});
+// ---- T-SHIRT DESIGN LIBRARY ----
+const SHIRT_DESIGN_PREFIX = "shirt-designs/";
+
+const shirtUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+// List all shirt designs
+app.get("/api/shirt-designs", async (req, res) => {
+  try {
+    const out = await designR2.send(
+      new ListObjectsV2Command({
+        Bucket: DESIGN_BUCKET,
+        Prefix: SHIRT_DESIGN_PREFIX,
+      })
+    );
+
+    const keys = (out.Contents || [])
+      .map((item) => item.Key)
+      .filter(
+        (key) =>
+          key &&
+          key !== SHIRT_DESIGN_PREFIX &&
+          !key.endsWith("/")
+      );
+
+    const items = await Promise.all(
+      keys.map(async (key) => {
+        const url = await getSignedUrl(
+          designR2,
+          new GetObjectCommand({
+            Bucket: DESIGN_BUCKET,
+            Key: key,
+          }),
+          {
+            expiresIn: 60 * 60,
+          }
+        );
+
+        return {
+          key,
+          name: key.replace(SHIRT_DESIGN_PREFIX, ""),
+          url,
+        };
+      })
+    );
+
+    res.json({
+      items,
+    });
+  } catch (err) {
+    console.error("shirt-designs list error:", err);
+
+    res.status(500).json({
+      error: "Failed to load shirt designs",
+    });
+  }
+});
+
+
+// Upload new shirt design
+app.post(
+  "/api/shirt-designs",
+  shirtUpload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          error: "No file uploaded",
+        });
+      }
+
+      const safeName = req.file.originalname.replace(
+        /[^\w.\-() ]+/g,
+        "_"
+      );
+
+      const key =
+        `${SHIRT_DESIGN_PREFIX}${Date.now()}-${safeName}`;
+
+      await designR2.send(
+        new PutObjectCommand({
+          Bucket: DESIGN_BUCKET,
+          Key: key,
+          Body: req.file.buffer,
+          ContentType:
+            req.file.mimetype ||
+            "application/octet-stream",
+        })
+      );
+
+      const url = await getSignedUrl(
+        designR2,
+        new GetObjectCommand({
+          Bucket: DESIGN_BUCKET,
+          Key: key,
+        }),
+        {
+          expiresIn: 60 * 60,
+        }
+      );
+
+      res.json({
+        success: true,
+        key,
+        name: safeName,
+        url,
+      });
+    } catch (err) {
+      console.error("shirt-design upload error:", err);
+
+      res.status(500).json({
+        error: "Failed to upload shirt design",
+      });
+    }
+  }
+);
+
+
+// Delete shirt design
+app.delete("/api/shirt-designs", async (req, res) => {
+  try {
+    const key = String(req.query.key || "");
+
+    if (!key.startsWith(SHIRT_DESIGN_PREFIX)) {
+      return res.status(400).json({
+        error: "Invalid shirt design key",
+      });
+    }
+
+    await designR2.send(
+      new DeleteObjectCommand({
+        Bucket: DESIGN_BUCKET,
+        Key: key,
+      })
+    );
+
+    res.json({
+      success: true,
+    });
+  } catch (err) {
+    console.error("shirt-design delete error:", err);
+
+    res.status(500).json({
+      error: "Failed to delete shirt design",
+    });
   }
 });
 // ---- DESIGN LIBRARY API (folders + designs) ----
