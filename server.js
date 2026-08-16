@@ -736,59 +736,90 @@ const shirtUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
 });
-// List all shirt designs
-app.get("/api/shirt-designs", async (req, res) => {
+const SHIRT_CATALOG_KEY = "shirt-designs/catalog.json";
+
+async function getShirtCatalog() {
   try {
-    const out = await designR2.send(
-      new ListObjectsV2Command({
+    const result = await designR2.send(
+      new GetObjectCommand({
         Bucket: DESIGN_BUCKET,
-        Prefix: SHIRT_DESIGN_PREFIX,
+        Key: SHIRT_CATALOG_KEY,
       })
     );
 
-    const keys = (out.Contents || [])
-      .map((item) => item.Key)
-      .filter(
-        (key) =>
-          key &&
-          key !== SHIRT_DESIGN_PREFIX &&
-          !key.endsWith("/")
-      );
+    const body = await result.Body.transformToString();
+    return JSON.parse(body);
+  } catch (err) {
+    if (
+      err.name === "NoSuchKey" ||
+      err.$metadata?.httpStatusCode === 404
+    ) {
+      return [];
+    }
+
+    throw err;
+  }
+}
+
+async function saveShirtCatalog(catalog) {
+  await designR2.send(
+    new PutObjectCommand({
+      Bucket: DESIGN_BUCKET,
+      Key: SHIRT_CATALOG_KEY,
+      Body: JSON.stringify(catalog, null, 2),
+      ContentType: "application/json",
+    })
+  );
+}
+// List all shirt designs
+app.get("/api/shirt-designs", async (req, res) => {
+  try {
+    const catalog = await getShirtCatalog();
 
     const items = await Promise.all(
-      keys.map(async (key) => {
-        const url = await getSignedUrl(
-          designR2,
-          new GetObjectCommand({
-            Bucket: DESIGN_BUCKET,
-            Key: key,
-          }),
-          {
-            expiresIn: 60 * 60,
-          }
-        );
+      catalog.map(async (item) => {
+        try {
+          const url = await getSignedUrl(
+            designR2,
+            new GetObjectCommand({
+              Bucket: DESIGN_BUCKET,
+              Key: item.key,
+            }),
+            {
+              expiresIn: 60 * 60,
+            }
+          );
 
-        return {
-          key,
-          name: key.replace(SHIRT_DESIGN_PREFIX, ""),
-          url,
-        };
+          return {
+            ...item,
+            url,
+          };
+        } catch (err) {
+          console.error(
+            "shirt design URL error:",
+            item.key,
+            err
+          );
+
+          return null;
+        }
       })
     );
 
     res.json({
-      items,
+      items: items.filter(Boolean),
     });
   } catch (err) {
-    console.error("shirt-designs list error:", err);
+    console.error(
+      "shirt-designs list error:",
+      err
+    );
 
     res.status(500).json({
       error: "Failed to load shirt designs",
     });
   }
 });
-
-
 // Upload new shirt design
 app.post(
   "/api/shirt-designs",
@@ -800,6 +831,15 @@ app.post(
           error: "No file uploaded",
         });
       }
+
+      const designName = String(
+        req.body.name || req.file.originalname
+      ).trim();
+
+      const price = Number(req.body.price || 0);
+
+      const available =
+        String(req.body.available || "true") === "true";
 
       const safeName = req.file.originalname.replace(
         /[^\w.\-() ]+/g,
@@ -820,6 +860,20 @@ app.post(
         })
       );
 
+      const catalog = await getShirtCatalog();
+
+      const catalogItem = {
+        key,
+        name: designName,
+        price,
+        available,
+        createdAt: new Date().toISOString(),
+      };
+
+      catalog.unshift(catalogItem);
+
+      await saveShirtCatalog(catalog);
+
       const url = await getSignedUrl(
         designR2,
         new GetObjectCommand({
@@ -833,12 +887,14 @@ app.post(
 
       res.json({
         success: true,
-        key,
-        name: safeName,
+        ...catalogItem,
         url,
       });
     } catch (err) {
-      console.error("shirt-design upload error:", err);
+      console.error(
+        "shirt-design upload error:",
+        err
+      );
 
       res.status(500).json({
         error: "Failed to upload shirt design",
@@ -846,7 +902,6 @@ app.post(
     }
   }
 );
-
 
 // Delete shirt design
 app.delete("/api/shirt-designs", async (req, res) => {
@@ -866,11 +921,22 @@ app.delete("/api/shirt-designs", async (req, res) => {
       })
     );
 
+    const catalog = await getShirtCatalog();
+
+    const updatedCatalog = catalog.filter(
+      (item) => item.key !== key
+    );
+
+    await saveShirtCatalog(updatedCatalog);
+
     res.json({
       success: true,
     });
   } catch (err) {
-    console.error("shirt-design delete error:", err);
+    console.error(
+      "shirt-design delete error:",
+      err
+    );
 
     res.status(500).json({
       error: "Failed to delete shirt design",
