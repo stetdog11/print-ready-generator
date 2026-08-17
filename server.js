@@ -476,14 +476,14 @@ app.use(express.json({ type: ["application/json"] }));
 // Allow Shopify Admin (and your shop domain) to call your API
 app.use(cors({
   origin: true,
-  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
 // Preflight support
 app.options("*", cors({
   origin: true,
-  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "DELETE", "PATCH", "OPTIONS"],
 }));
 async function loadOrders() {
   try {
@@ -604,6 +604,12 @@ orders.unshift(orderRecord);
 
 for (const [itemIndex, item] of (req.body.cartItems || []).entries()) {
   try {
+    if (item.productType === "shirt") {
+  console.log(
+    `Skipping TIFF generation for shirt item ${itemIndex + 1}`
+  );
+  continue;
+}
     const imageUrl = item.uploadUrl || item.image;
 
     if (!imageUrl) continue;
@@ -940,6 +946,70 @@ app.delete("/api/shirt-designs", async (req, res) => {
 
     res.status(500).json({
       error: "Failed to delete shirt design",
+    });
+  }
+});
+// Update shirt design metadata
+app.patch("/api/shirt-designs", async (req, res) => {
+  try {
+    const {
+      key,
+      name,
+      price,
+      available,
+    } = req.body || {};
+
+    if (
+      !key ||
+      !String(key).startsWith(SHIRT_DESIGN_PREFIX)
+    ) {
+      return res.status(400).json({
+        error: "Invalid shirt design key",
+      });
+    }
+
+    const catalog = await getShirtCatalog();
+
+    const index = catalog.findIndex(
+      (item) => item.key === key
+    );
+
+    if (index === -1) {
+      return res.status(404).json({
+        error: "Shirt design not found",
+      });
+    }
+
+    catalog[index] = {
+      ...catalog[index],
+      name:
+        name !== undefined
+          ? String(name).trim()
+          : catalog[index].name,
+      price:
+        price !== undefined
+          ? Number(price)
+          : catalog[index].price,
+      available:
+        available !== undefined
+          ? Boolean(available)
+          : catalog[index].available,
+    };
+
+    await saveShirtCatalog(catalog);
+
+    res.json({
+      success: true,
+      item: catalog[index],
+    });
+  } catch (err) {
+    console.error(
+      "shirt-design update error:",
+      err
+    );
+
+    res.status(500).json({
+      error: "Failed to update shirt design",
     });
   }
 });
