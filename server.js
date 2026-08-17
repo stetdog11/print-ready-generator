@@ -868,13 +868,34 @@ app.post(
 
       const catalog = await getShirtCatalog();
 
-      const catalogItem = {
-        key,
-        name: designName,
-        price,
-        available,
-        createdAt: new Date().toISOString(),
-      };
+      const sizes = Array.isArray(req.body.sizes)
+  ? req.body.sizes
+  : String(req.body.sizes || "")
+      .split(",")
+      .map((size) => size.trim())
+      .filter(Boolean);
+
+const colors = Array.isArray(req.body.colors)
+  ? req.body.colors
+  : String(req.body.colors || "")
+      .split(",")
+      .map((color) => color.trim())
+      .filter(Boolean);
+
+const images = Array.isArray(req.body.images)
+  ? req.body.images
+  : [];
+
+const catalogItem = {
+  key,
+  name: designName,
+  price,
+  available,
+  sizes,
+  colors,
+  images,
+  createdAt: new Date().toISOString(),
+};
 
       catalog.unshift(catalogItem);
 
@@ -952,12 +973,15 @@ app.delete("/api/shirt-designs", async (req, res) => {
 // Update shirt design metadata
 app.patch("/api/shirt-designs", async (req, res) => {
   try {
-    const {
-      key,
-      name,
-      price,
-      available,
-    } = req.body || {};
+  const {
+  key,
+  name,
+  price,
+  available,
+  sizes,
+  colors,
+  images,
+} = req.body || {};
 
     if (
       !key ||
@@ -994,6 +1018,20 @@ app.patch("/api/shirt-designs", async (req, res) => {
         available !== undefined
           ? Boolean(available)
           : catalog[index].available,
+      sizes:
+  sizes !== undefined && Array.isArray(sizes)
+    ? sizes
+    : catalog[index].sizes || [],
+
+colors:
+  colors !== undefined && Array.isArray(colors)
+    ? colors
+    : catalog[index].colors || [],
+
+images:
+  images !== undefined && Array.isArray(images)
+    ? images
+    : catalog[index].images || [],
     };
 
     await saveShirtCatalog(catalog);
