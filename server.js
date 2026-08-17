@@ -796,10 +796,41 @@ app.get("/api/shirt-designs", async (req, res) => {
             }
           );
 
-          return {
-            ...item,
-            url,
-          };
+          const imageUrls =
+  await Promise.all(
+    (Array.isArray(item.images)
+      ? item.images
+      : []
+    ).map(async (imageKey) => {
+      try {
+        return await getSignedUrl(
+          designR2,
+          new GetObjectCommand({
+            Bucket: DESIGN_BUCKET,
+            Key: imageKey,
+          }),
+          {
+            expiresIn: 60 * 60,
+          }
+        );
+      } catch (err) {
+        console.error(
+          "shirt gallery URL error:",
+          imageKey,
+          err
+        );
+
+        return null;
+      }
+    })
+  );
+
+return {
+  ...item,
+  url,
+  imageUrls:
+    imageUrls.filter(Boolean),
+};
         } catch (err) {
           console.error(
             "shirt design URL error:",
@@ -929,7 +960,113 @@ const catalogItem = {
     }
   }
 );
+// Upload additional image for an existing shirt design
+app.post(
+  "/api/shirt-designs/image",
+  shirtUpload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          error: "No image uploaded",
+        });
+      }
 
+      const shirtKey = String(
+        req.body.key || ""
+      ).trim();
+
+      if (
+        !shirtKey ||
+        !shirtKey.startsWith(
+          SHIRT_DESIGN_PREFIX
+        )
+      ) {
+        return res.status(400).json({
+          error: "Invalid shirt design key",
+        });
+      }
+
+      const catalog =
+        await getShirtCatalog();
+
+      const index = catalog.findIndex(
+        (item) => item.key === shirtKey
+      );
+
+      if (index === -1) {
+        return res.status(404).json({
+          error: "Shirt design not found",
+        });
+      }
+
+      const safeName =
+        req.file.originalname.replace(
+          /[^\w.\-() ]+/g,
+          "_"
+        );
+
+      const imageKey =
+        `${SHIRT_DESIGN_PREFIX}gallery/` +
+        `${Date.now()}-${safeName}`;
+
+      await designR2.send(
+        new PutObjectCommand({
+          Bucket: DESIGN_BUCKET,
+          Key: imageKey,
+          Body: req.file.buffer,
+          ContentType:
+            req.file.mimetype ||
+            "application/octet-stream",
+        })
+      );
+
+      const images = Array.isArray(
+        catalog[index].images
+      )
+        ? catalog[index].images
+        : [];
+
+      catalog[index] = {
+        ...catalog[index],
+        images: [
+          ...images,
+          imageKey,
+        ],
+      };
+
+      await saveShirtCatalog(catalog);
+
+      const url = await getSignedUrl(
+        designR2,
+        new GetObjectCommand({
+          Bucket: DESIGN_BUCKET,
+          Key: imageKey,
+        }),
+        {
+          expiresIn: 60 * 60,
+        }
+      );
+
+      res.json({
+        success: true,
+        key: imageKey,
+        url,
+        images: catalog[index].images,
+      });
+    } catch (err) {
+      console.error(
+        "shirt gallery upload error:",
+        err
+      );
+
+      res.status(500).json({
+        error:
+          "Failed to upload shirt image",
+      });
+    }
+  }
+);
 // Delete shirt design
 app.delete("/api/shirt-designs", async (req, res) => {
   try {
