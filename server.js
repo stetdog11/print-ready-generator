@@ -917,6 +917,10 @@ const images = Array.isArray(req.body.images)
   ? req.body.images
   : [];
 
+const category = String(
+  req.body.category || "Uncategorized"
+).trim();
+
 const catalogItem = {
   key,
   name: designName,
@@ -925,6 +929,7 @@ const catalogItem = {
   sizes,
   colors,
   images,
+  category,
   createdAt: new Date().toISOString(),
 };
 
@@ -1118,6 +1123,7 @@ app.patch("/api/shirt-designs", async (req, res) => {
   sizes,
   colors,
   images,
+  category,
 } = req.body || {};
 
     if (
@@ -1169,6 +1175,10 @@ images:
   images !== undefined && Array.isArray(images)
     ? images
     : catalog[index].images || [],
+      category:
+  category !== undefined
+    ? String(category).trim()
+    : catalog[index].category || "Uncategorized",
     };
 
     await saveShirtCatalog(catalog);
