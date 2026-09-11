@@ -511,228 +511,238 @@ async function saveOrders() {
     )
   );
 }
-app.post("/api/paybright/charge", async (req, res) => {
+app.post("/api/square/charge", async (req, res) => {
   try {
     const {
       amount,
-      card,
-      expiry_month,
-      expiry_year,
-      cvv2,
-      name,
+      sourceId,
       customer,
     } = req.body || {};
 
-    if (!amount || !card || !expiry_month || !expiry_year || !cvv2) {
-      return res.status(400).json({ error: "Missing payment fields" });
+    if (!amount || !sourceId) {
+      return res.status(400).json({
+        error: "Missing payment fields",
+      });
     }
 
-    const apiBase =
-      process.env.PAYBRIGHT_API_BASE ||
-      "https://api.sandbox.paybrightgateway.com/api/v2";
+    const accessToken = process.env.SQUARE_ACCESS_TOKEN;
+    const locationId = process.env.SQUARE_LOCATION_ID;
 
-    const apiKey = process.env.PAYBRIGHT_API_KEY;
-const pin = process.env.PAYBRIGHT_SECRET;
-
-const auth = Buffer.from(`${apiKey}:${pin}`).toString("base64");
-
-    const response = await fetch(`${apiBase}/transactions/charge`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${auth}`,
-        "User-Agent": "ParadisePrintingCustomSite/1.0",
-      },
-      body: JSON.stringify({
-        amount: Number(amount),
-        card: String(card).replace(/\s/g, ""),
-        expiry_month: Number(expiry_month),
-        expiry_year: Number(expiry_year),
-        cvv2: String(cvv2),
-        name: name || customer?.name || "Paradise Printing Customer",
-        capture: true,
-        save_card: false,
-        customer: {
-          send_receipt: true,
-          email: customer?.email || "",
-        },
-        billing_info: {
-          first_name: customer?.name || "",
-          phone: customer?.phone || "",
-          zip: customer?.zip || "",
-          country: "US",
-        },
-        transaction_details: {
-          description: "Paradise Printing order",
-          order_number: `PP-${Date.now()}`,
-        },
-      }),
-    });
-
-    const rawText = await response.text();
-console.log("API KEY:", apiKey);
-console.log("API Key EXISTS:", !!apiKey);
-console.log("PAYBRIGHT STATUS:", response.status);
-console.log("PAYBRIGHT RESPONSE:", rawText);
-
-let data = {};
-try {
-  data = rawText ? JSON.parse(rawText) : {};
-} catch {
-  data = { raw: rawText };
-}
-
-if (!response.ok) {
-  return res.status(response.status).json({
-    error: "PayBright charge failed",
-    status: response.status,
-    details: data,
-  });
-}
-
-const orderRecord = {
-  id: data.reference_number,
-  date: new Date().toISOString(),
-  amount,
-  status: data.status,
-  customer,
-  cartItems: req.body.cartItems || [],
-  tiffUrls: [],
-};
-
-orders.unshift(orderRecord);
-
-for (const [itemIndex, item] of (req.body.cartItems || []).entries()) {
-  try {
-    if (item.productType === "shirt") {
-  console.log(
-    `Skipping TIFF generation for shirt item ${itemIndex + 1}`
-  );
-  continue;
-}
-    const imageUrl = item.uploadUrl || item.image;
-
-    if (!imageUrl) continue;
-
-    const repeatSize = Number(item.repeatSize || 1);
-const dpi = 300;
-const rotateDeg = Number(item.rotation || 0);
-console.log("Downloading image:", imageUrl);
-    const imgRes = await fetch(imageUrl);
-
-    if (!imgRes.ok) {
-      throw new Error(`Image download failed: ${imgRes.status}`);
+    if (!accessToken || !locationId) {
+      return res.status(500).json({
+        error: "Square is not configured",
+      });
     }
 
-    const imgBuf = Buffer.from(
-      await imgRes.arrayBuffer()
-    );
+    const idempotencyKey = crypto.randomUUID();
 
-    const meta = await sharp(imgBuf, { failOn: "none" }).metadata();
-
-    const aspect =
-      meta.height && meta.width
-        ? meta.height / meta.width
-        : 1;
-
-    const tileWpx = Math.round(repeatSize * dpi);
-    const tileHpx = Math.round(tileWpx * aspect);
-
-    const tileBuf = await sharp(imgBuf)
-      .rotate(rotateDeg)
-      .flop()
-      .resize(tileWpx, tileHpx, { fit: "cover" })
-      .toBuffer();
-const tileMeta = await sharp(tileBuf).metadata();
-
-console.log("Tile metadata:", {
-  width: tileMeta.width,
-  height: tileMeta.height,
-});
-    // Generate exactly ONE repeat tile
-const fabricWidthPx = tileWpx;
-const fabricHeightPx = tileHpx;
-
-const tilesAcross = 1;
-const tilesDown = 1;
-
-    const composites = [];
-
-for (let y = 0; y < tilesDown; y++) {
-  for (let x = 0; x < tilesAcross; x++) {
-    composites.push({
-      input: tileBuf,
-      left: x * tileWpx,
-      top: y * tileHpx,
-    });
-  }
-}
-if (
-  tileWpx > fabricWidthPx ||
-  tileHpx > fabricHeightPx
-) {
-  throw new Error(
-    `Tile (${tileWpx}x${tileHpx}) is larger than canvas (${fabricWidthPx}x${fabricHeightPx})`
-  );
-}
-    const rowBuf = await sharp({
-      create: {
-        width: fabricWidthPx,
-        height: fabricHeightPx,
-        channels: 4,
-        background: {
-          r: 255,
-          g: 255,
-          b: 255,
-          alpha: 0,
+    const response = await fetch(
+      "https://connect.squareup.com/v2/payments",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          "Square-Version": "2026-08-19",
         },
-      },
-    })
-      .composite(composites)
-      .png()
-      .toBuffer();
-
-    const pxPerMm = dpi / 25.4;
-
-    const tiffBuf = await sharp(rowBuf)
-      .tiff({
-        compression: "lzw",
-        xres: pxPerMm,
-        yres: pxPerMm,
-        resolutionUnit: "inch",
-      })
-      .toBuffer();
-
-    const safeUploadId = item.uploadId || "library";
-
-const tiffKey =
-  `outputs/orders/${data.reference_number}-${safeUploadId}-item-${itemIndex + 1}.tiff`;
-
-    const tiffUrl = await putPublicObject(
-      tiffKey,
-      "image/tiff",
-      tiffBuf
+        body: JSON.stringify({
+          source_id: sourceId,
+          idempotency_key: idempotencyKey,
+          amount_money: {
+            amount: Math.round(Number(amount) * 100),
+            currency: "USD",
+          },
+          location_id: locationId,
+          autocomplete: true,
+          buyer_email_address: customer?.email || undefined,
+          note: "Paradise Printing website order",
+          reference_id: `PP-${Date.now()}`,
+        }),
+      }
     );
 
-    orderRecord.tiffUrls.push(tiffUrl);
+    const squareData = await response.json();
+
+    console.log("SQUARE STATUS:", response.status);
+    console.log(
+      "SQUARE PAYMENT:",
+      squareData?.payment?.id || squareData?.errors
+    );
+
+    if (!response.ok || !squareData?.payment) {
+      return res.status(response.status || 500).json({
+        error: "Square payment failed",
+        details: squareData,
+      });
+    }
+
+    const payment = squareData.payment;
+
+    if (payment.status !== "COMPLETED") {
+      return res.status(400).json({
+        error: "Square payment was not completed",
+        details: squareData,
+      });
+    }
+
+    const data = {
+      reference_number: payment.id,
+      status: "Approved",
+      payment,
+    };
+
+    const orderRecord = {
+      id: data.reference_number,
+      date: new Date().toISOString(),
+      amount,
+      status: data.status,
+      customer,
+      cartItems: req.body.cartItems || [],
+      tiffUrls: [],
+    };
+
+    orders.unshift(orderRecord);
+
+    for (const [itemIndex, item] of (req.body.cartItems || []).entries()) {
+      try {
+        if (item.productType === "shirt") {
+          console.log(
+            `Skipping TIFF generation for shirt item ${itemIndex + 1}`
+          );
+          continue;
+        }
+
+        const imageUrl = item.uploadUrl || item.image;
+
+        if (!imageUrl) continue;
+
+        const repeatSize = Number(item.repeatSize || 1);
+        const dpi = 300;
+        const rotateDeg = Number(item.rotation || 0);
+
+        console.log("Downloading image:", imageUrl);
+
+        const imgRes = await fetch(imageUrl);
+
+        if (!imgRes.ok) {
+          throw new Error(`Image download failed: ${imgRes.status}`);
+        }
+
+        const imgBuf = Buffer.from(
+          await imgRes.arrayBuffer()
+        );
+
+        const meta = await sharp(imgBuf, { failOn: "none" }).metadata();
+
+        const aspect =
+          meta.height && meta.width
+            ? meta.height / meta.width
+            : 1;
+
+        const tileWpx = Math.round(repeatSize * dpi);
+        const tileHpx = Math.round(tileWpx * aspect);
+
+        const tileBuf = await sharp(imgBuf)
+          .rotate(rotateDeg)
+          .flop()
+          .resize(tileWpx, tileHpx, { fit: "cover" })
+          .toBuffer();
+
+        const tileMeta = await sharp(tileBuf).metadata();
+
+        console.log("Tile metadata:", {
+          width: tileMeta.width,
+          height: tileMeta.height,
+        });
+
+        const fabricWidthPx = tileWpx;
+        const fabricHeightPx = tileHpx;
+
+        const tilesAcross = 1;
+        const tilesDown = 1;
+
+        const composites = [];
+
+        for (let y = 0; y < tilesDown; y++) {
+          for (let x = 0; x < tilesAcross; x++) {
+            composites.push({
+              input: tileBuf,
+              left: x * tileWpx,
+              top: y * tileHpx,
+            });
+          }
+        }
+
+        if (
+          tileWpx > fabricWidthPx ||
+          tileHpx > fabricHeightPx
+        ) {
+          throw new Error(
+            `Tile (${tileWpx}x${tileHpx}) is larger than canvas (${fabricWidthPx}x${fabricHeightPx})`
+          );
+        }
+
+        const rowBuf = await sharp({
+          create: {
+            width: fabricWidthPx,
+            height: fabricHeightPx,
+            channels: 4,
+            background: {
+              r: 255,
+              g: 255,
+              b: 255,
+              alpha: 0,
+            },
+          },
+        })
+          .composite(composites)
+          .png()
+          .toBuffer();
+
+        const pxPerMm = dpi / 25.4;
+
+        const tiffBuf = await sharp(rowBuf)
+          .tiff({
+            compression: "lzw",
+            xres: pxPerMm,
+            yres: pxPerMm,
+            resolutionUnit: "inch",
+          })
+          .toBuffer();
+
+        const safeUploadId = item.uploadId || "library";
+
+        const tiffKey =
+          `outputs/orders/${data.reference_number}-${safeUploadId}-item-${itemIndex + 1}.tiff`;
+
+        const tiffUrl = await putPublicObject(
+          tiffKey,
+          "image/tiff",
+          tiffBuf
+        );
+
+        orderRecord.tiffUrls.push(tiffUrl);
 
         console.log("TIFF CREATED:", tiffUrl);
-    console.log("Repeat size:", repeatSize);
-    console.log("Tiles across:", tilesAcross);
-  } catch (err) {
-    console.error(
-      `TIFF GENERATION FAILED FOR ITEM ${itemIndex + 1}`,
-      err
-    );
-  }
-}
+        console.log("Repeat size:", repeatSize);
+        console.log("Tiles across:", tilesAcross);
+      } catch (err) {
+        console.error(
+          `TIFF GENERATION FAILED FOR ITEM ${itemIndex + 1}`,
+          err
+        );
+      }
+    }
+
     await saveOrders();
-    
-console.log("ORDER SAVED:", data.reference_number);
-return res.json(data);
+
+    console.log("ORDER SAVED:", data.reference_number);
+    return res.json(data);
   } catch (err) {
-    console.error("PayBright charge error:", err);
-    return res.status(500).json({ error: err.message || "Payment error" });
+    console.error("Square charge error:", err);
+    return res.status(500).json({
+      error: err.message || "Payment error",
+    });
   }
 });
 // ---- T-SHIRT DESIGN LIBRARY ----
