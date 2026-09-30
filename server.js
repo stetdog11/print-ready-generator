@@ -678,9 +678,9 @@ const locationId = req.isSquareTest
     if (req.isSquareTest) {
   orderRecord.testMode = true;
   orderRecord.status = "TEST — NOT PAID";
-} else {
-  orders.unshift(orderRecord);
 }
+
+orders.unshift(orderRecord);
 
     for (const [itemIndex, item] of (req.body.cartItems || []).entries()) {
       try {
@@ -812,20 +812,7 @@ const locationId = req.isSquareTest
         );
       }
     }
-
-    if (req.isSquareTest) {
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: S3_BUCKET,
-      Key: `test-orders/${data.reference_number}.json`,
-      Body: JSON.stringify(orderRecord, null, 2),
-      ContentType: "application/json",
-    })
-  );
-} else {
-  await saveOrders();
-}
-
+await saveOrders();
     console.log("ORDER SAVED:", data.reference_number);
     return res.json(data);
   } catch (err) {
