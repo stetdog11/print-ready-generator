@@ -511,7 +511,71 @@ async function saveOrders() {
     )
   );
 }
-app.post("/api/square/charge", async (req, res) => {
+function requireTestAdmin(req, res, next) {
+  const username = process.env.ADMIN_USER;
+  const password = process.env.ADMIN_PASS;
+
+  if (!username || !password) {
+    return res.status(503).json({
+      error: "Test checkout is disabled.",
+    });
+  }
+
+  const authorization = req.get("Authorization") || "";
+  const match = authorization.match(/^Basic ([A-Za-z0-9+/=]+)$/i);
+
+  if (!match) {
+    return res.status(401).json({
+      error: "Enter your admin username and password.",
+    });
+  }
+
+  const supplied = Buffer.from(match[1], "base64").toString("utf8");
+
+  const hash = (value) =>
+    crypto.createHash("sha256").update(value).digest();
+
+  if (
+    !crypto.timingSafeEqual(
+      hash(supplied),
+      hash(`${username}:${password}`)
+    )
+  ) {
+    return res.status(403).json({
+      error: "Incorrect admin username or password.",
+    });
+  }
+
+  next();
+}
+
+app.get("/api/square/test-config", requireTestAdmin, (req, res) => {
+  res.set("Cache-Control", "no-store");
+
+  const applicationId = process.env.SQUARE_SANDBOX_APPLICATION_ID;
+  const locationId = process.env.SQUARE_SANDBOX_LOCATION_ID;
+  const accessToken = process.env.SQUARE_SANDBOX_ACCESS_TOKEN;
+
+  if (!applicationId || !locationId || !accessToken) {
+    return res.status(503).json({
+      error: "Square Sandbox settings are missing.",
+    });
+  }
+
+  return res.json({ applicationId, locationId });
+});
+app.post(
+  ["/api/square/charge", "/api/square/test-charge"],
+  (req, res, next) => {
+    req.isSquareTest = req.path === "/api/square/test-charge";
+
+    if (req.isSquareTest) {
+      return requireTestAdmin(req, res, next);
+    }
+
+    next();
+  },
+  async (req, res) => {
   try {
     const {
       amount,
@@ -525,8 +589,13 @@ app.post("/api/square/charge", async (req, res) => {
       });
     }
 
-    const accessToken = process.env.SQUARE_ACCESS_TOKEN;
-    const locationId = process.env.SQUARE_LOCATION_ID;
+    const accessToken = req.isSquareTest
+  ? process.env.SQUARE_SANDBOX_ACCESS_TOKEN
+  : process.env.SQUARE_ACCESS_TOKEN;
+
+const locationId = req.isSquareTest
+  ? process.env.SQUARE_SANDBOX_LOCATION_ID
+  : process.env.SQUARE_LOCATION_ID;
 
     if (!accessToken || !locationId) {
       return res.status(500).json({
@@ -537,7 +606,9 @@ app.post("/api/square/charge", async (req, res) => {
     const idempotencyKey = crypto.randomUUID();
 
     const response = await fetch(
-      "https://connect.squareup.com/v2/payments",
+    req.isSquareTest
+  ? "https://connect.squareupsandbox.com/v2/payments"
+  : "https://connect.squareup.com/v2/payments",
       {
         method: "POST",
         headers: {
@@ -586,10 +657,13 @@ app.post("/api/square/charge", async (req, res) => {
     }
 
     const data = {
-      reference_number: payment.id,
-      status: "Approved",
-      payment,
-    };
+  reference_number: req.isSquareTest
+    ? `TEST-${payment.id}`
+    : payment.id,
+  status: "Approved",
+  testMode: req.isSquareTest,
+  payment,
+};
 
     const orderRecord = {
       id: data.reference_number,
@@ -601,7 +675,12 @@ app.post("/api/square/charge", async (req, res) => {
       tiffUrls: [],
     };
 
-    orders.unshift(orderRecord);
+    if (req.isSquareTest) {
+  orderRecord.testMode = true;
+  orderRecord.status = "TEST — NOT PAID";
+} else {
+  orders.unshift(orderRecord);
+}
 
     for (const [itemIndex, item] of (req.body.cartItems || []).entries()) {
       try {
@@ -734,7 +813,18 @@ app.post("/api/square/charge", async (req, res) => {
       }
     }
 
-    await saveOrders();
+    if (req.isSquareTest) {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: `test-orders/${data.reference_number}.json`,
+      Body: JSON.stringify(orderRecord, null, 2),
+      ContentType: "application/json",
+    })
+  );
+} else {
+  await saveOrders();
+}
 
     console.log("ORDER SAVED:", data.reference_number);
     return res.json(data);
